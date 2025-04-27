@@ -1,0 +1,53 @@
+# Ignore bundler config
+/.bundle
+
+# Ignore log files and temp files
+/log/*
+/tmp/*
+!/log/.keep
+
+# Ignore system-specific files
+.DS_Store
+Thumbs.db
+
+# Ignore Ruby-specific files
+*.gem
+*.rbc
+/.config
+/coverage/
+/pkg/
+/spec/reports/
+/test/reports/
+/.yardoc/
+/.yarn-integrity
+/yarn-error.log
+
+# Ignore dependency directories
+/vendor/bundle/
+/vendor/cache/
+/vendor/ruby/
+
+# Ignore generated files
+*.adf
+*.json
+
+# Ignore editor/IDE-specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+*.bak
+
+# Ignore test coverage reports
+/coverage/
+/coverage.json
+
+# Ignore temporary files created by rake or other tools
+*.tmp
+*.pid
+*.seed
+*.old
+*.orig
+
+# Ignore macOS-specific files
+.DS_Store
