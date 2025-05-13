@@ -1,0 +1,14 @@
+[project]
+name = "helper-scripts"
+version = "0.1.0"
+description = "Python helper scripts for uploading ADF JSON and images to Confluence Cloud."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.2.0",
+    "pytest>=8.3.5",
+    "requests>=2.32.3",
+]
+
+[tool.setuptools]
+packages = ["helper_scripts"]

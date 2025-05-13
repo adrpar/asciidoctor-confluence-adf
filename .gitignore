@@ -51,3 +51,43 @@ Thumbs.db
 
 # Ignore macOS-specific files
 .DS_Store
+
+# Python-specific ignores
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pdb
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+*.log
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Test and coverage outputs
+htmlcov/
+.tox/
+.nox/
+.pytest_cache/
+.cache/
+.coverage
+.coverage.*
+nosetests.xml
+test-results.xml
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore helper_scripts output
+/helper_scripts/*.patched
+/helper_scripts/*.tmp

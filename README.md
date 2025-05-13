@@ -11,6 +11,11 @@ This converter transforms AsciiDoc documents into Atlassian Document Format (ADF
 - Automatically handles inline formatting (e.g., bold, italic, links).
 - Generates structured JSON for use in Confluence or other Atlassian tools.
 
+> **Note:**  
+> This project has been created with the support of large language models (LLMs).  
+> As a result, some code may reflect an iterative or "vibe coding" style.  
+> The codebase will be gradually cleaned up and refactored for clarity and maintainability.
+
 ## Installation
 
 To install the necessary dependencies, run the following command:
@@ -326,6 +331,20 @@ ADF Output:
   ]
 }
 ```
+
+## Python Helper Scripts for Confluence Upload
+
+This repository also includes a set of Python helper scripts for uploading ADF JSON and images as attachments to Confluence Cloud.  
+You can find them in the [`helper_scripts/`](./helper_scripts/) directory.
+
+**Features:**
+- Uploads images and ADF JSON to Confluence Cloud using the REST API.
+- Handles image extraction from AsciiDoc sources (including includes and imagesdir).
+- Automatically patches ADF media nodes with Confluence file IDs.
+
+**Quickstart:**
+
+See [`helper_scripts/README.md`](./helper_scripts/README.md) for full documentation and advanced usage.
 
 ## Contributing
 
