@@ -43,12 +43,10 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install uv
-        run: |
-          pip install uv
-      - name: Install Python dependencies
-        run: |
-          uv pip install -r requirements.txt
-      - name: Run Python tests
-        run: |
-          uv pip install pytest
-          uv run -m pytest
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install the project
+        run: uv sync --locked --all-extras --dev
+
+      - name: Run tests
+        run: uv run pytest tests
