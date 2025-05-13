@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  ruby:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+      - name: Install dependencies
+        run: |
+          gem install bundler
+          bundle install
+      - name: Run Ruby tests
+        run: |
+          if [ -f Rakefile ]; then
+            bundle exec rake
+          elif [ -d spec ]; then
+            bundle exec rspec
+          elif [ -d test ]; then
+            bundle exec ruby -Itest $(find test -name test_*.rb)
+          else
+            echo "No Ruby tests found."
+          fi
+
+  python:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: helper_scripts
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install uv
+        run: |
+          pip install uv
+      - name: Install Python dependencies
+        run: |
+          uv pip install -r requirements.txt
+      - name: Run Python tests
+        run: |
+          uv pip install pytest
+          uv run -m pytest
