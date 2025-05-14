@@ -446,6 +446,102 @@ class AdfConverterTest < Minitest::Test
     assert_equal expected_json, result_json
   end
 
+  def test_convert_toc_macro
+    adoc = <<~ADOC
+     = Title
+     :toc: 
+
+     == Section 1
+     == Section 2
+     ADOC
+
+    doc = Asciidoctor.load(adoc, backend: 'adf', safe: :safe, header_footer: false)
+    assert_kind_of AdfConverter, doc.converter
+    result = JSON.parse(doc.converter.convert(doc, 'document'))
+
+    # Normalize UUIDs in the result
+    result_json = normalize_uuids(result)
+
+    expected = {
+      "version" => 1,
+      "type" => "doc",
+      "content" => [
+        {
+          "type" => "inlineExtension",
+          "attrs" => {
+            "extensionType" => "com.atlassian.confluence.macro.core",
+            "extensionKey" => "toc",
+            "parameters" => {
+              "macroParams" => {},
+              "macroMetadata" => {
+                "macroId" => { "value" => "normalized-uuid" },
+                "schemaVersion" => { "value" => "1" },
+                "title" => "Table of Contents"
+              }
+            },
+            "localId" => "normalized-uuid"
+          }
+        },
+        {
+          "type" => "heading",
+          "attrs" => { "level" => 2 },
+          "content" => [
+            { "text" => "Section 1", "type" => "text" },
+            {
+              "type" => "inlineExtension",
+              "attrs" => {
+                "extensionType" => "com.atlassian.confluence.macro.core",
+                "extensionKey" => "anchor",
+                "parameters" => {
+                  "macroParams" => {
+                    "" => { "value" => "_section_1" },
+                    "legacyAnchorId" => { "value" => "LEGACY-_section_1" },
+                    "_parentId" => { "value" => "normalized-uuid" }
+                  },
+                  "macroMetadata" => {
+                    "macroId" => { "value" => "normalized-uuid" },
+                    "schemaVersion" => { "value" => "1" },
+                    "title" => "Anchor"
+                  }
+                },
+                "localId" => "normalized-uuid"
+              }
+            }
+          ]
+        },
+        {
+          "type" => "heading",
+          "attrs" => { "level" => 2 },
+          "content" => [
+            { "text" => "Section 2", "type" => "text" },
+            {
+              "type" => "inlineExtension",
+              "attrs" => {
+                "extensionType" => "com.atlassian.confluence.macro.core",
+                "extensionKey" => "anchor",
+                "parameters" => {
+                  "macroParams" => {
+                    "" => { "value" => "_section_2" },
+                    "legacyAnchorId" => { "value" => "LEGACY-_section_2" },
+                    "_parentId" => { "value" => "normalized-uuid" }
+                  },
+                  "macroMetadata" => {
+                    "macroId" => { "value" => "normalized-uuid" },
+                    "schemaVersion" => { "value" => "1" },
+                    "title" => "Anchor"
+                  }
+                },
+                "localId" => "normalized-uuid"
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+    assert_equal expected, result_json
+  end
+
   private
 
   def normalize_uuids(json)

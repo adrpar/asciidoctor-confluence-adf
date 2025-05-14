@@ -42,12 +42,18 @@ class AdfConverter < Asciidoctor::Converter::Base
     when 'inline_image' then convert_inline_image(node)
     when 'listing' then convert_listing(node)
     when 'embedded' then convert_embedded(node)
+    when 'toc' then convert_toc(node)
     else
       super
     end
   end
 
   def convert_document(node)
+    sectioned = node.sections
+    if sectioned && (node.attr? 'toc') && (node.attr? 'toc-placement', 'auto')
+      convert_toc(node)
+    end
+
     a = node.content
 
     {
@@ -211,6 +217,26 @@ class AdfConverter < Asciidoctor::Converter::Base
 
   def convert_embedded(node)
     ""
+  end
+
+  def convert_toc(node)
+    # Add a Confluence TOC macro as an inlineExtension node
+    self.node_list << {
+      "type" => "inlineExtension",
+      "attrs" => {
+        "extensionType" => "com.atlassian.confluence.macro.core",
+        "extensionKey" => "toc",
+        "parameters" => {
+          "macroParams" => {},
+          "macroMetadata" => {
+            "macroId" => { "value" => SecureRandom.uuid },
+            "schemaVersion" => { "value" => "1" },
+            "title" => "Table of Contents"
+          }
+        },
+        "localId" => SecureRandom.uuid
+      }
+    }
   end
 
   def convert_anchor(node)

@@ -7,8 +7,9 @@ This converter transforms AsciiDoc documents into Atlassian Document Format (ADF
 ## Features
 
 - Converts AsciiDoc elements (e.g., paragraphs, lists, tables) into ADF-compliant JSON.
-- Supports Confluence-specific macros (e.g., anchors).
-- **Includes a Jira inline macro for convenient issue linking.**
+- Supports Confluence-specific macros (e.g., anchors, TOC).
+- Includes a Jira inline macro for convenient issue linking.
+- Supports Confluence Table of Contents (TOC) macro via `:toc:`.
 - Automatically handles inline formatting (e.g., bold, italic, links).
 - Generates structured JSON for use in Confluence or other Atlassian tools.
 
@@ -39,6 +40,8 @@ require_relative 'src/adf_converter'
 adoc = <<~ADOC
 = Document Title
 
+:toc:
+
 This is a paragraph.
 
 == Section Title
@@ -50,6 +53,7 @@ This is a paragraph.
 |Cell 1 |Cell 2
 |Cell 3 |Cell 4
 |===
+
 ADOC
 
 output = Asciidoctor.convert(adoc, backend: 'adf', safe: :safe, header_footer: false)
@@ -113,10 +117,22 @@ The macro uses the `JIRA_BASE_URL` environment variable to construct the link.
 Set it when running Asciidoctor, for example:
 
 ```bash
-JIRA_BASE_URL="https://your-company.atlassian.net" asciidoctor -r ./src/adf_converter.rb -b adf yourfile.adoc
+JIRA_BASE_URL="https://your-company.atlassian.net" asciidoctor -r ./src/jira_macro.rb -b adf yourfile.adoc
 ```
 
 If `JIRA_BASE_URL` is not set, the macro will output the original macro text as plain text and print a warning.
+
+---
+
+## Confluence Table of Contents (TOC) Macro
+
+You can insert a Confluence-style Table of Contents macro into your document using:
+
+```adoc
+:toc:
+```
+
+This will be converted to a Confluence TOC macro in the ADF output.
 
 ---
 
@@ -157,6 +173,26 @@ ADF Output:
     {
       "type": "text",
       "text": "Section Title"
+    },
+    {
+      "type": "inlineExtension",
+      "attrs": {
+        "extensionType": "com.atlassian.confluence.macro.core",
+        "extensionKey": "anchor",
+        "parameters": {
+          "macroParams": {
+            "": { "value": "_section_title" },
+            "legacyAnchorId": { "value": "LEGACY-_section_title" },
+            "_parentId": { "value": "normalized-uuid" }
+          },
+          "macroMetadata": {
+            "macroId": { "value": "normalized-uuid" },
+            "schemaVersion": { "value": "1" },
+            "title": "Anchor"
+          }
+        },
+        "localId": "normalized-uuid"
+      }
     }
   ]
 },
@@ -379,6 +415,32 @@ ADF Output:
       "text": " for details."
     }
   ]
+}
+```
+
+### Table of Contents (TOC) Macro
+AsciiDoc:
+```adoc
+:toc:
+```
+
+ADF Output:
+```json
+{
+  "type": "inlineExtension",
+  "attrs": {
+    "extensionType": "com.atlassian.confluence.macro.core",
+    "extensionKey": "toc",
+    "parameters": {
+      "macroParams": {},
+      "macroMetadata": {
+        "macroId": { "value": "normalized-uuid" },
+        "schemaVersion": { "value": "1" },
+        "title": "Table of Contents"
+      }
+    },
+    "localId": "normalized-uuid"
+  }
 }
 ```
 
