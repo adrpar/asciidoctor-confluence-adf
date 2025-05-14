@@ -57,7 +57,9 @@ class AdfConverterTest < Minitest::Test
     doc = Asciidoctor.load(adoc, backend: 'adf', safe: :safe, header_footer: false)
 
     assert_kind_of AdfConverter, doc.converter
-    result = doc.converter.convert(doc, 'document')
+    result = JSON.parse(doc.converter.convert(doc, 'document'))
+
+    result_json = normalize_uuids(result)
 
     expected = {
       "version" => 1,
@@ -70,6 +72,26 @@ class AdfConverterTest < Minitest::Test
             {
               "text" => "Section Title",
               "type" => "text"
+            },
+            {
+              "type" => "inlineExtension",
+              "attrs" => {
+                "extensionType" => "com.atlassian.confluence.macro.core",
+                "extensionKey" => "anchor",
+                "parameters" => {
+                  "macroParams" => {
+                    "" => { "value" => "_section_title" },
+                    "legacyAnchorId" => { "value" => "LEGACY-_section_title" },
+                    "_parentId" => { "value" => "normalized-uuid" }
+                  },
+                  "macroMetadata" => {
+                    "macroId" => { "value" => "normalized-uuid" },
+                    "schemaVersion" => { "value" => "1" },
+                    "title" => "Anchor"
+                  }
+                },
+                "localId" => "normalized-uuid"
+              }
             }
           ]
         },
@@ -83,8 +105,9 @@ class AdfConverterTest < Minitest::Test
           ]
         }
       ]
-    }.to_json
-    assert_equal expected, result
+    }
+
+    assert_equal expected, result_json
   end
 
   def test_convert_ulist
@@ -400,7 +423,7 @@ class AdfConverterTest < Minitest::Test
               "type" => "text"
             },
             {
-              "text" => "[section-anchor]",
+              "text" => "Section with Anchor",
               "type" => "text",
               "marks" => [
                 {

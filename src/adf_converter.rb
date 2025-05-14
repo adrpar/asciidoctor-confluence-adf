@@ -62,9 +62,7 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def convert_section(node)
-    anchor = if node.attr('id') then
-      convert_anchor(node)
-    end
+    anchor = node.id ? convert_anchor(node) : nil
 
     # Create the heading for the section
     self.node_list << {
@@ -263,7 +261,7 @@ class AdfConverter < Asciidoctor::Converter::Base
     when :xref
       unless (text = node.text)
         if Asciidoctor::AbstractNode === (ref = (@refs ||= node.document.catalog[:refs])[refid = node.attributes['refid']] || (refid.nil_or_empty? ? (top = get_root_document node) : nil))
-          text = top ? nil : %([#{refid}])
+          text = top ? nil : (ref && ref.title ? ref.title : %([#{refid}]))
         else
           text = %([#{refid}])
         end
