@@ -8,6 +8,7 @@ This converter transforms AsciiDoc documents into Atlassian Document Format (ADF
 
 - Converts AsciiDoc elements (e.g., paragraphs, lists, tables) into ADF-compliant JSON.
 - Supports Confluence-specific macros (e.g., anchors).
+- **Includes a Jira inline macro for convenient issue linking.**
 - Automatically handles inline formatting (e.g., bold, italic, links).
 - Generates structured JSON for use in Confluence or other Atlassian tools.
 
@@ -67,6 +68,55 @@ This command:
 - Loads the `AdfConverter` from the `src/adf_converter.rb` file.
 - Specifies the `adf` backend with `-b adf`.
 - Converts the input AsciiDoc file (`./docs/asciidoc/arc42.adoc`) into ADF JSON.
+
+---
+
+## Extension Loading
+
+By default, the `adf_extensions.rb` file loads **both** the ADF converter and the Jira inline macro, so you can use them together with a single `-r` option:
+
+```bash
+asciidoctor -r ./src/adf_extensions.rb -b adf yourfile.adoc
+```
+
+If you only want to use the Jira inline macro (for example, with the standard HTML backend), you can load just the macro:
+
+```bash
+asciidoctor -r ./src/jira_macro.rb yourfile.adoc
+```
+
+> **Note:**  
+> `adf_extensions.rb` registers both the ADF converter and the Jira macro for convenience.  
+> If you only need the Jira macro, require `jira_macro.rb` directly.
+
+---
+
+## Jira Inline Macro
+
+This project includes a **Jira inline macro** for easily linking to Jira issues from your AsciiDoc content.
+
+### Usage
+
+In your AsciiDoc file, use the macro as follows:
+
+```adoc
+jira:ISSUE-123[]
+jira:ISSUE-456[Custom link text]
+```
+
+- The macro will render as a link to the specified Jira issue.
+- You can optionally provide custom link text in the brackets.
+
+### Setting the Jira Base URL
+
+The macro uses the `JIRA_BASE_URL` environment variable to construct the link.  
+Set it when running Asciidoctor, for example:
+
+```bash
+JIRA_BASE_URL="https://your-company.atlassian.net" asciidoctor -r ./src/adf_converter.rb -b adf yourfile.adoc
+```
+
+If `JIRA_BASE_URL` is not set, the macro will output the original macro text as plain text and print a warning.
 
 ---
 
