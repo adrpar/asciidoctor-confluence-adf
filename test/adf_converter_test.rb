@@ -542,6 +542,58 @@ class AdfConverterTest < Minitest::Test
     assert_equal expected, result_json
   end
 
+  def test_convert_literal_blocks_with_languages
+    adoc = <<~ADOC
+      [source,ruby]
+      ----
+      puts 'Hello, world!'
+      ----
+
+      [source,python]
+      ----
+      print("Hello, world!")
+      ----
+
+      ----
+      Plain text code block
+      ----
+    ADOC
+
+    doc = Asciidoctor.load(adoc, backend: 'adf', safe: :safe, header_footer: false)
+    assert_kind_of AdfConverter, doc.converter
+    result = JSON.parse(doc.converter.convert(doc, 'document'))
+
+    expected = {
+      "version" => 1,
+      "type" => "doc",
+      "content" => [
+        {
+          "type" => "codeBlock",
+          "attrs" => { "language" => "ruby" },
+          "content" => [
+            { "type" => "text", "text" => "puts 'Hello, world!'" }
+          ]
+        },
+        {
+          "type" => "codeBlock",
+          "attrs" => { "language" => "python" },
+          "content" => [
+            { "type" => "text", "text" => 'print("Hello, world!")' }
+          ]
+        },
+        {
+          "type" => "codeBlock",
+          "attrs" => { "language" => "plaintext" },
+          "content" => [
+            { "type" => "text", "text" => "Plain text code block" }
+          ]
+        }
+      ]
+    }
+
+    assert_equal expected, result
+  end
+
   private
 
   def normalize_uuids(json)

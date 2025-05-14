@@ -444,6 +444,52 @@ ADF Output:
 }
 ```
 
+### Literal/Source Code Blocks
+
+You can include code blocks with or without a specified language. These are converted to ADF `codeBlock` nodes with the appropriate language attribute.
+
+AsciiDoc:
+```adoc
+[source,ruby]
+----
+puts 'Hello, world!'
+----
+
+[source,python]
+----
+print("Hello, world!")
+----
+
+----
+Plain text code block
+----
+```
+
+ADF Output:
+```json
+{
+  "type": "codeBlock",
+  "attrs": { "language": "ruby" },
+  "content": [
+    { "type": "text", "text": "puts 'Hello, world!'" }
+  ]
+},
+{
+  "type": "codeBlock",
+  "attrs": { "language": "python" },
+  "content": [
+    { "type": "text", "text": "print(\"Hello, world!\")" }
+  ]
+},
+{
+  "type": "codeBlock",
+  "attrs": { "language": "plaintext" },
+  "content": [
+    { "type": "text", "text": "Plain text code block" }
+  ]
+}
+```
+
 ## Python Helper Scripts for Confluence Upload
 
 This repository also includes a set of Python helper scripts for uploading ADF JSON and images as attachments to Confluence Cloud.  
