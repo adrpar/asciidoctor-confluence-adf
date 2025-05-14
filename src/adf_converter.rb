@@ -43,6 +43,7 @@ class AdfConverter < Asciidoctor::Converter::Base
     when 'listing' then convert_listing(node)
     when 'embedded' then convert_embedded(node)
     when 'toc' then convert_toc(node)
+    when 'literal' then convert_literal(node)
     else
       super
     end
@@ -339,6 +340,16 @@ class AdfConverter < Asciidoctor::Converter::Base
       "attrs" => { "language" => node.attr('language') || "plaintext" },
       "content" => [
         create_text_node(node.content) # Escape newlines and quotes
+      ]
+    }
+  end
+
+  def convert_literal(node)
+    self.node_list << {
+      "type" => "codeBlock",
+      "attrs" => { "language" => node.attr('language') || "plaintext" },
+      "content" => [
+        create_text_node(node.content)
       ]
     }
   end
