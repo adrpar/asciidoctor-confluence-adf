@@ -65,3 +65,28 @@ def test_update_adf_media_ids_nested():
     updated = update_adf_media_ids(adf, mapping)
     assert updated["content"][0]["content"][0]["attrs"]["id"] == "id-222"
     assert updated["content"][1]["content"][0]["attrs"]["id"] == "id-333"
+
+
+def test_update_adf_media_inline_ids():
+    adf = {
+        "type": "doc",
+        "version": 1,
+        "content": [
+            {
+                "type": "paragraph",
+                "content": [
+                    {
+                        "type": "mediaInline",
+                        "attrs": {
+                            "type": "file",
+                            "id": "inline-image.png",
+                            "collection": "attachments",
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+    mapping = {"inline-image.png": "inline-fileid"}
+    updated = update_adf_media_ids(adf, mapping)
+    assert updated["content"][0]["content"][0]["attrs"]["id"] == "inline-fileid"

@@ -8,7 +8,7 @@ def update_adf_media_ids(adf_json: Any, filename_to_fileid: Dict[str, str]) -> A
 
     def recurse_update(node: Any) -> Any:
         if isinstance(node, dict):
-            if node.get("type") == "media" and "attrs" in node:
+            if node.get("type") in ["media", "mediaInline"] and "attrs" in node:
                 attrs = node["attrs"]
                 file_name = attrs.get("id")
                 if file_name and file_name in filename_to_fileid:
