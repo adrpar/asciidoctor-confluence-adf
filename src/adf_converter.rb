@@ -115,41 +115,58 @@ class AdfConverter < Asciidoctor::Converter::Base
   def convert_table(node)
     self.node_list << {
       "type" => "table",
-      "content" => node.rows[:body].map do |row|
-        {
-          "type" => "tableRow",
-          "content" => row.map do |cell|
-            cell_attrs = {}
-            if cell.colspan
-              cell_attrs["colspan"] = cell.colspan
-            else
-              cell_attrs["colspan"] = 1
-            end
-            if cell.rowspan
-              cell_attrs["rowspan"] = cell.rowspan
-            else
-              cell_attrs["rowspan"] = 1
-            end
-            
-            case cell.style
-            when :asciidoc
-              cell_content = cell.content
-            when :literal
-              cell_content = cell.text
-            else
-              cell_content = (cell_content = cell.content).empty? ? '' : cell_content.join("\n")
-            end
-            
-            {
-              "type" => "tableCell",
-              "attrs" => cell_attrs.empty? ? nil : cell_attrs,
-              "content" => [
-                create_paragraph_node(parse_or_escape(cell_content))
-              ]
-            }.compact
-          end
-        }
-      end
+      "content" => [
+        *convert_table_head_rows(node.rows[:head]),
+        *convert_table_body_rows(node.rows[:body])
+      ]
+    }
+  end
+
+  def convert_table_head_rows(head_rows)
+    return [] unless head_rows && !head_rows.empty?
+    head_rows.map do |row|
+      {
+        "type" => "tableRow",
+        "content" => row.map { |cell| convert_table_header_cell(cell) }
+      }
+    end
+  end
+
+  def convert_table_body_rows(body_rows)
+    return [] unless body_rows && !body_rows.empty?
+    body_rows.map do |row|
+      {
+        "type" => "tableRow",
+        "content" => row.map { |cell| convert_table_body_cell(cell) }
+      }
+    end
+  end
+
+  def convert_table_header_cell(cell)
+    cell_attrs = {
+      "colspan" => cell.colspan || 1,
+      "rowspan" => cell.rowspan || 1
+    }
+    {
+      "type" => "tableHeader",
+      "attrs" => cell_attrs,
+      "content" => [
+        create_paragraph_node(parse_or_escape(cell.text))
+      ]
+    }
+  end
+
+  def convert_table_body_cell(cell)
+    cell_type = (cell.style == :header) ? "tableHeader" : "tableCell"
+    {
+      "type" => cell_type,
+      "attrs" => {
+        "colspan" => cell.colspan || 1,
+        "rowspan" => cell.rowspan || 1
+      },
+      "content" => [
+        create_paragraph_node(parse_or_escape(cell.text))
+      ]
     }
   end
 
@@ -172,8 +189,12 @@ class AdfConverter < Asciidoctor::Converter::Base
           "attrs" => {
             "type" => "file",
             "id" => node.attr('target'),
-            "collection" => "attachments"
-          }
+            "collection" => "attachments",
+            "alt" => node.attr('alt') || "",
+            "occurrenceKey" => node.attr('occurrenceKey') || SecureRandom.uuid,
+            "width" => node.attr('width')&.to_i,
+            "height" => node.attr('height')&.to_i
+          }.compact
         }
       ]
     }
@@ -184,7 +205,7 @@ class AdfConverter < Asciidoctor::Converter::Base
       "type" => "mediaInline",
       "attrs" => {
         "type" => "file",
-        "id" => node.attr('target') || "unknown-id",
+        "id" => node.target || "unknown-id",
         "collection" => "attachments",
         "alt" => node.attr('alt') || "",
         "occurrenceKey" => node.attr('occurrenceKey') || SecureRandom.uuid,
@@ -208,6 +229,9 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def convert_preamble(node)
+    node.blocks.each do |block|
+      convert(block, block.context.to_s)
+    end
   end
 
   def convert_page_break(node)

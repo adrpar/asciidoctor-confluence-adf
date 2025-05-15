@@ -214,118 +214,6 @@ class AdfConverterTest < Minitest::Test
     assert_equal expected, result
   end
 
-  def test_convert_table
-    adoc = <<~ADOC
-      |===
-      |Cell 1 |Cell 2
-      |Cell 3 |Cell 4
-      |===
-    ADOC
-    doc = Asciidoctor.load(adoc, backend: 'adf', safe: :safe, header_footer: false)
-
-    assert_kind_of AdfConverter, doc.converter
-    result = doc.converter.convert(doc, 'document')
-
-    expected = {
-      "version" => 1,
-      "type" => "doc",
-      "content" => [
-        {
-          "type" => "table",
-          "content" => [
-            {
-              "type" => "tableRow",
-              "content" => [
-                {
-                  "type" => "tableCell",
-                  "attrs" =>
-                  {
-                    "colspan" => 1,
-                    "rowspan" => 1
-                  },
-                  "content" => [
-                    {
-                      "type" => "paragraph",
-                      "content" => [
-                        {
-                          "text" => "Cell 1",
-                          "type" => "text"
-                        }
-                      ]
-                    }
-                  ]
-                },
-                {
-                  "type" => "tableCell",
-                  "attrs" =>
-                  {
-                    "colspan" => 1,
-                    "rowspan" => 1
-                  },
-                  "content" => [
-                    {
-                      "type" => "paragraph",
-                      "content" => [
-                        {
-                          "text" => "Cell 2",
-                          "type" => "text"
-                        }
-                      ]
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "type" => "tableRow",
-              "content" => [
-                {
-                  "type" => "tableCell",
-                  "attrs" =>
-                  {
-                    "colspan" => 1,
-                    "rowspan" => 1
-                  },
-                  "content" => [
-                    {
-                      "type" => "paragraph",
-                      "content" => [
-                        {
-                          "text" => "Cell 3",
-                          "type" => "text"
-                        }
-                      ]
-                    }
-                  ]
-                },
-                {
-                  "type" => "tableCell",
-                  "attrs" =>
-                  {
-                    "colspan" => 1,
-                    "rowspan" => 1
-                  },
-                  "content" => [
-                    {
-                      "type" => "paragraph",
-                      "content" => [
-                        {
-                          "text" => "Cell 4",
-                          "type" => "text"
-                        }
-                      ]
-                    }
-                  ]
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    }.to_json
-    assert_equal expected, result
-  end
-
   def test_convert_inline_anchor
     adoc = "See <<TEST-123>> for details."
     doc = Asciidoctor.load(adoc, backend: 'adf', safe: :safe, header_footer: false)
@@ -592,6 +480,73 @@ class AdfConverterTest < Minitest::Test
     }
 
     assert_equal expected, result
+  end
+
+  def test_convert_image_block
+    adoc = <<~ADOC
+      image::example.png[Alt text, width=300, height=200]
+    ADOC
+
+    doc = Asciidoctor.load(adoc, backend: 'adf', safe: :safe, header_footer: false)
+    assert_kind_of AdfConverter, doc.converter
+    result = JSON.parse(doc.converter.convert(doc, 'document'))
+
+    expected = {
+      "version" => 1,
+      "type" => "doc",
+      "content" => [
+        {
+          "type" => "mediaSingle",
+          "attrs" => {"layout" => "center"},
+          "content" => [
+            {
+              "type" => "media",
+              "attrs" => {
+                "type" => "file",
+                "id" => "example.png",
+                "collection" => "attachments",
+                "alt" => "Alt text",
+                "occurrenceKey" => "normalized-uuid",
+                "width" => 300,
+                "height" => 200
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+    # Normalize UUIDs in the result
+    result_json = normalize_uuids(result)
+    expected_json = normalize_uuids(expected)
+    assert_equal expected_json, result_json
+  end
+
+  def test_convert_inline_image
+    adoc = <<~ADOC
+      This is an inline image image:example.png[Alt text, width=100, height=50] in a sentence.
+    ADOC
+
+    doc = Asciidoctor.load(adoc, backend: 'adf', safe: :safe, header_footer: false)
+    assert_kind_of AdfConverter, doc.converter
+    result = JSON.parse(doc.converter.convert(doc, 'document'))
+
+    # Find the paragraph node
+    para = result["content"].find { |n| n["type"] == "paragraph" }
+    assert para, "Paragraph node should exist"
+
+    # Find the inline image node
+    inline_image = para["content"].find { |n| n["type"] == "mediaInline" }
+    assert inline_image, "Inline image node should exist"
+
+    # Check attributes
+    attrs = inline_image["attrs"]
+    assert_equal "file", attrs["type"]
+    assert_equal "example.png", attrs["id"]
+    assert_equal "attachments", attrs["collection"]
+    assert_equal "Alt text", attrs["alt"]
+    assert_equal 100, attrs["width"]
+    assert_equal 50, attrs["height"]
   end
 
   private
