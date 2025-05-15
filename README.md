@@ -9,6 +9,7 @@ This converter transforms AsciiDoc documents into Atlassian Document Format (ADF
 - Converts AsciiDoc elements (e.g., paragraphs, lists, tables) into ADF-compliant JSON.
 - Supports Confluence-specific macros (e.g., anchors, TOC).
 - Includes a Jira inline macro for convenient issue linking.
+- Includes an Atlassian mention macro for user mentions, with Confluence Cloud user lookup.
 - Supports Confluence Table of Contents (TOC) macro via `:toc:`.
 - Automatically handles inline formatting (e.g., bold, italic, links).
 - Generates structured JSON for use in Confluence or other Atlassian tools.
@@ -54,6 +55,8 @@ This is a paragraph.
 |Cell 3 |Cell 4
 |===
 
+atlasMention:Adrian_Partl[]
+jira:ISSUE-123[]
 ADOC
 
 output = Asciidoctor.convert(adoc, backend: 'adf', safe: :safe, header_footer: false)
@@ -77,21 +80,21 @@ This command:
 
 ## Extension Loading
 
-By default, the `adf_extensions.rb` file loads **both** the ADF converter and the Jira inline macro, so you can use them together with a single `-r` option:
+By default, the `adf_extensions.rb` file loads **both** the ADF converter and the Jira/Atlassian mention macros, so you can use them together with a single `-r` option:
 
 ```bash
 asciidoctor -r ./src/adf_extensions.rb -b adf yourfile.adoc
 ```
 
-If you only want to use the Jira inline macro (for example, with the standard HTML backend), you can load just the macro:
+If you only want to use the Jira and Atlassian mention macros (for example, with the standard HTML backend), you can load just the macro:
 
 ```bash
 asciidoctor -r ./src/jira_macro.rb yourfile.adoc
 ```
 
 > **Note:**  
-> `adf_extensions.rb` registers both the ADF converter and the Jira macro for convenience.  
-> If you only need the Jira macro, require `jira_macro.rb` directly.
+> `adf_extensions.rb` registers both the ADF converter and the macros for convenience.  
+> If you only need the macros, require `jira_macro.rb` directly.
 
 ---
 
@@ -121,6 +124,42 @@ JIRA_BASE_URL="https://your-company.atlassian.net" asciidoctor -r ./src/jira_mac
 ```
 
 If `JIRA_BASE_URL` is not set, the macro will output the original macro text as plain text and print a warning.
+
+---
+
+## Atlassian Mention Inline Macro
+
+This project also includes an **Atlassian mention macro** for user mentions, which can resolve user IDs from Confluence Cloud.
+
+### Usage
+
+In your AsciiDoc file, use the macro as follows (note the use of underscores for spaces):
+
+```adoc
+atlasMention:Adrian_Partl[]
+```
+
+- The macro will look up the user "Adrian Partl" in Confluence Cloud and insert an ADF mention node (when using the `adf` backend).
+- For non-ADF backends (e.g., HTML), it will render as plain text `@Adrian Partl`.
+
+### Setting Confluence API Credentials
+
+The macro uses the following environment variables to connect to Confluence Cloud:
+
+- `CONFLUENCE_BASE_URL` (e.g., `https://your-company.atlassian.net`)
+- `CONFLUENCE_API_TOKEN`
+- `CONFLUENCE_USER_EMAIL`
+
+Set them when running Asciidoctor, for example:
+
+```bash
+CONFLUENCE_BASE_URL="https://your-company.atlassian.net" \
+CONFLUENCE_API_TOKEN="your-api-token" \
+CONFLUENCE_USER_EMAIL="your-email@example.com" \
+asciidoctor -r ./src/adf_extensions.rb -b adf yourfile.adoc
+```
+
+If credentials are missing or the user is not found, the macro will output `@Adrian Partl` as plain text.
 
 ---
 
@@ -441,6 +480,30 @@ ADF Output:
     },
     "localId": "normalized-uuid"
   }
+}
+```
+
+### Atlassian Mention Macro
+AsciiDoc:
+```adoc
+atlasMention:Adrian_Partl[]
+```
+
+ADF Output (if user found):
+```json
+{
+  "type": "mention",
+  "attrs": {
+    "id": "5e73358b2354a30c3ba2f02b",
+    "text": "@Adrian Partl"
+  }
+}
+```
+If the user is not found or credentials are missing, the macro outputs plain text:
+```json
+{
+  "type": "text",
+  "text": "@Adrian Partl"
 }
 ```
 

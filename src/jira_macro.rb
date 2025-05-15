@@ -1,8 +1,7 @@
 require 'asciidoctor'
 require 'asciidoctor/extensions'
 
-# Usage in AsciiDoc: jira:ISSUE-123[]
-# Requires JIRA_BASE_URL to be set as an environment variable.
+require_relative 'confluence_client'
 
 class JiraInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
   use_dsl
@@ -28,6 +27,50 @@ class JiraInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
   end
 end
 
+# Atlassian Mention Inline Macro
+class AtlasMentionInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
+  use_dsl
+
+  named :atlasMention
+  name_positional_attributes 'text'
+
+  def process parent, target, attrs
+    name = target.tr('_', ' ')
+    if parent.document.converter && parent.document.converter.backend == 'adf'
+      confluence_base_url = ENV['CONFLUENCE_BASE_URL']
+      api_token = ENV['CONFLUENCE_API_TOKEN']
+      user_email = ENV['CONFLUENCE_USER_EMAIL']
+
+      if confluence_base_url.nil? || api_token.nil? || user_email.nil?
+        warn ">>> WARN: Missing Confluence API credentials for atlasMention macro."
+        return { "type" => "text", "text" => "@#{name}" }
+      end
+
+      client = ConfluenceClient.new(
+        base_url: confluence_base_url,
+        api_token: api_token,
+        user_email: user_email
+      )
+      user = client.find_user_by_fullname(name)
+
+      if user
+        {
+          "type" => "mention",
+          "attrs" => {
+            "id" => user["id"],
+            "text" => "@#{user["displayName"]}"
+          }
+        }.to_json
+      else
+        "@#{name}"
+      end
+    else
+      "@#{name}"
+    end
+  end
+end
+
 Asciidoctor::Extensions.register do
   inline_macro JiraInlineMacro
+  inline_macro AtlasMentionInlineMacro
 end
