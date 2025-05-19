@@ -59,8 +59,6 @@ class AdfConverterTest < Minitest::Test
     assert_kind_of AdfConverter, doc.converter
     result = JSON.parse(doc.converter.convert(doc, 'document'))
 
-    result_json = normalize_uuids(result)
-
     expected = {
       "version" => 1,
       "type" => "doc",
@@ -82,15 +80,12 @@ class AdfConverterTest < Minitest::Test
                   "macroParams" => {
                     "" => { "value" => "_section_title" },
                     "legacyAnchorId" => { "value" => "LEGACY-_section_title" },
-                    "_parentId" => { "value" => "normalized-uuid" }
                   },
                   "macroMetadata" => {
-                    "macroId" => { "value" => "normalized-uuid" },
                     "schemaVersion" => { "value" => "1" },
                     "title" => "Anchor"
                   }
-                },
-                "localId" => "normalized-uuid"
+                }
               }
             }
           ]
@@ -107,7 +102,7 @@ class AdfConverterTest < Minitest::Test
       ]
     }
 
-    assert_equal expected, result_json
+    assert_equal expected, result
   end
 
   def test_convert_ulist
@@ -266,9 +261,6 @@ class AdfConverterTest < Minitest::Test
     assert_kind_of AdfConverter, doc.converter
     result = JSON.parse(doc.converter.convert(doc, 'document'))
 
-    # Normalize UUIDs in the result
-    result_json = normalize_uuids(result)
-
     expected = {
       "version" => 1,
       "type" => "doc",
@@ -290,15 +282,12 @@ class AdfConverterTest < Minitest::Test
                   "macroParams" => {
                     "" => { "value" => "section-anchor" },
                     "legacyAnchorId" => { "value" => "LEGACY-section-anchor" },
-                    "_parentId" => { "value" => "normalized-uuid" }
                   },
                   "macroMetadata" => {
-                    "macroId" => { "value" => "normalized-uuid" },
                     "schemaVersion" => { "value" => "1" },
                     "title" => "Anchor"
                   }
-                },
-                "localId" => "normalized-uuid"
+                }
               }
             }
           ]
@@ -329,9 +318,7 @@ class AdfConverterTest < Minitest::Test
       ]
     }
 
-    expected_json = normalize_uuids(expected)
-
-    assert_equal expected_json, result_json
+    assert_equal expected, result
   end
 
   def test_convert_toc_macro
@@ -347,9 +334,6 @@ class AdfConverterTest < Minitest::Test
     assert_kind_of AdfConverter, doc.converter
     result = JSON.parse(doc.converter.convert(doc, 'document'))
 
-    # Normalize UUIDs in the result
-    result_json = normalize_uuids(result)
-
     expected = {
       "version" => 1,
       "type" => "doc",
@@ -362,12 +346,10 @@ class AdfConverterTest < Minitest::Test
             "parameters" => {
               "macroParams" => {},
               "macroMetadata" => {
-                "macroId" => { "value" => "normalized-uuid" },
                 "schemaVersion" => { "value" => "1" },
                 "title" => "Table of Contents"
               }
-            },
-            "localId" => "normalized-uuid"
+            }
           }
         },
         {
@@ -384,15 +366,12 @@ class AdfConverterTest < Minitest::Test
                   "macroParams" => {
                     "" => { "value" => "_section_1" },
                     "legacyAnchorId" => { "value" => "LEGACY-_section_1" },
-                    "_parentId" => { "value" => "normalized-uuid" }
                   },
                   "macroMetadata" => {
-                    "macroId" => { "value" => "normalized-uuid" },
                     "schemaVersion" => { "value" => "1" },
                     "title" => "Anchor"
                   }
-                },
-                "localId" => "normalized-uuid"
+                }
               }
             }
           ]
@@ -411,15 +390,12 @@ class AdfConverterTest < Minitest::Test
                   "macroParams" => {
                     "" => { "value" => "_section_2" },
                     "legacyAnchorId" => { "value" => "LEGACY-_section_2" },
-                    "_parentId" => { "value" => "normalized-uuid" }
                   },
                   "macroMetadata" => {
-                    "macroId" => { "value" => "normalized-uuid" },
                     "schemaVersion" => { "value" => "1" },
                     "title" => "Anchor"
                   }
-                },
-                "localId" => "normalized-uuid"
+                }
               }
             }
           ]
@@ -427,7 +403,7 @@ class AdfConverterTest < Minitest::Test
       ]
     }
 
-    assert_equal expected, result_json
+    assert_equal expected, result
   end
 
   def test_convert_literal_blocks_with_languages

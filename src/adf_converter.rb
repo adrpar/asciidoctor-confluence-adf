@@ -254,12 +254,10 @@ class AdfConverter < Asciidoctor::Converter::Base
         "parameters" => {
           "macroParams" => {},
           "macroMetadata" => {
-            "macroId" => { "value" => SecureRandom.uuid },
             "schemaVersion" => { "value" => "1" },
             "title" => "Table of Contents"
           }
-        },
-        "localId" => SecureRandom.uuid
+        }
       }
     }
   end
@@ -279,16 +277,13 @@ class AdfConverter < Asciidoctor::Converter::Base
         "parameters" => {
           "macroParams" => {
             "" => { "value" => node.id },
-            "legacyAnchorId" => { "value" => "LEGACY-#{node.id}" },
-            "_parentId" => { "value" => SecureRandom.uuid }
+            "legacyAnchorId" => { "value" => "LEGACY-#{node.id}" }
           },
           "macroMetadata" => {
-            "macroId" => { "value" => SecureRandom.uuid },
             "schemaVersion" => { "value" => "1" },
             "title" => "Anchor"
           }
-        },
-        "localId" => SecureRandom.uuid
+        }
       }
     }
   end

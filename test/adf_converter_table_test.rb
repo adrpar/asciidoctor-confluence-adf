@@ -322,7 +322,6 @@ class AdfConverterTableTest < Minitest::Test
     assert_kind_of AdfConverter, doc.converter
     result = JSON.parse(doc.converter.convert(doc, 'document'))
 
-    result_json = normalize_uuids(result)
     expected = {
       "version" => 1,
       "type" => "doc",
@@ -398,7 +397,7 @@ class AdfConverterTableTest < Minitest::Test
         }
       ]
     }
-    assert_equal expected, result_json
+    assert_equal expected, result
   end
 
   def test_convert_table_in_root_section
@@ -417,7 +416,7 @@ class AdfConverterTableTest < Minitest::Test
     assert_kind_of AdfConverter, doc.converter
     result = JSON.parse(doc.converter.convert(doc, 'document'))
 
-    result_json = normalize_uuids(result)
+    result_json = result
     expected = {
       "version" => 1,
       "type" => "doc",
@@ -499,38 +498,18 @@ class AdfConverterTableTest < Minitest::Test
                   "macroParams" => {
                     "" => { "value" => "_another_section_title" },
                     "legacyAnchorId" => { "value" => "LEGACY-_another_section_title" },
-                    "_parentId" => { "value" => "normalized-uuid" }
                   },
                   "macroMetadata" => {
-                    "macroId" => { "value" => "normalized-uuid" },
                     "schemaVersion" => { "value" => "1" },
                     "title" => "Anchor"
                   }
-                },
-                "localId" => "normalized-uuid"
+                }
               }
             }
           ]
         }
       ]
     }
-    assert_equal expected, result_json
-  end
-
-  private
-
-  def normalize_uuids(json)
-    case json
-    when Hash
-      json.each do |key, value|
-        json[key] = normalize_uuids(value)
-      end
-    when Array
-      json.map! { |item| normalize_uuids(item) }
-    when String
-      json.match?(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/) ? 'normalized-uuid' : json
-    else
-      json
-    end
+    assert_equal expected, result
   end
 end
