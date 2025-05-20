@@ -10,6 +10,7 @@ This converter transforms AsciiDoc documents into Atlassian Document Format (ADF
 - Supports Confluence-specific macros (e.g., anchors, TOC).
 - Includes a Jira inline macro for convenient issue linking.
 - Includes an Atlassian mention macro for user mentions, with Confluence Cloud user lookup.
+- **Supports Appfox Workflows for Confluence macros for metadata, approvers, and change tables.**
 - Supports Confluence Table of Contents (TOC) macro via `:toc:`.
 - Automatically handles inline formatting (e.g., bold, italic, links).
 - Generates structured JSON for use in Confluence or other Atlassian tools.
@@ -18,6 +19,98 @@ This converter transforms AsciiDoc documents into Atlassian Document Format (ADF
 > This project has been created with the support of large language models (LLMs).  
 > As a result, some code may reflect an iterative or "vibe coding" style.  
 > The codebase will be gradually cleaned up and refactored for clarity and maintainability.
+
+---
+
+## Macro Support
+
+This converter provides native support for several Confluence and Appfox macros, allowing you to author and maintain workflow-driven documentation in AsciiDoc and publish it to Confluence with all workflow metadata and tables intact.
+
+### Jira Inline Macro
+
+This project includes a **Jira inline macro** for easily linking to Jira issues from your AsciiDoc content.
+
+**Usage:**
+```adoc
+jira:ISSUE-123[]
+jira:ISSUE-456[Custom link text]
+```
+- The macro will render as a link to the specified Jira issue.
+- You can optionally provide custom link text in the brackets.
+
+Set the `JIRA_BASE_URL` environment variable to control the link target.
+
+---
+
+### Atlassian Mention Inline Macro
+
+This project also includes an **Atlassian mention macro** for user mentions, which can resolve user IDs from Confluence Cloud.
+
+**Usage:**
+```adoc
+atlasMention:Adrian_Partl[]
+```
+- The macro will look up the user "Adrian Partl" in Confluence Cloud and insert an ADF mention node (when using the `adf` backend).
+- For non-ADF backends (e.g., HTML), it will render as plain text `@Adrian Partl`.
+
+Set the following environment variables for user lookup:
+- `CONFLUENCE_BASE_URL`
+- `CONFLUENCE_API_TOKEN`
+- `CONFLUENCE_USER_EMAIL`
+
+---
+
+### Appfox Workflows for Confluence Macros
+
+[Appfox Workflows for Confluence](https://www.appfox.io/products/workflows-confluence/) is a popular Confluence Cloud app that enables teams to add document workflows, approvals, and metadata to Confluence pages.
+
+This converter provides native support for Appfox Workflows macros:
+
+#### Metadata Macro
+
+Use `appfoxWorkflowMetadata:KEYWORD[]` to insert workflow metadata fields such as status, approvers, expiry date, etc.
+
+**Example:**
+```adoc
+appfoxWorkflowMetadata:status[]
+appfoxWorkflowMetadata:approvers[]
+```
+
+#### Approvers Table Macro
+
+Use `workflowApproval:all[]` for all approvers, or `workflowApproval:latest[]` for latest approvals.
+
+**Example:**
+```adoc
+workflowApproval:all[]
+workflowApproval:latest[]
+```
+
+#### Change Table Macro
+
+Use `workflowChangeTable:[]` to insert the document control/change table.
+
+**Example:**
+```adoc
+workflowChangeTable:[]
+```
+
+These macros are automatically converted to the correct ADF JSON for Appfox Workflows macros when using the `adf` backend.  
+If you use a non-ADF backend (e.g., HTML), the macro will render as plain text for easy editing.
+
+---
+
+### Table of Contents (TOC) Macro
+
+You can insert a Confluence-style Table of Contents macro into your document using:
+
+```adoc
+:toc:
+```
+
+This will be converted to a Confluence TOC macro in the ADF output.
+
+---
 
 ## Installation
 
@@ -57,6 +150,9 @@ This is a paragraph.
 
 atlasMention:Adrian_Partl[]
 jira:ISSUE-123[]
+appfoxWorkflowMetadata:status[]
+workflowApproval:all[]
+workflowChangeTable:[]
 ADOC
 
 output = Asciidoctor.convert(adoc, backend: 'adf', safe: :safe, header_footer: false)
@@ -80,98 +176,22 @@ This command:
 
 ## Extension Loading
 
-By default, the `adf_extensions.rb` file loads **both** the ADF converter and the Jira/Atlassian mention macros, so you can use them together with a single `-r` option:
+By default, the `adf_extensions.rb` file loads **both** the ADF converter and all macros, including Jira, Atlassian mention, and Appfox Workflows macros, so you can use them together with a single `-r` option:
 
 ```bash
 asciidoctor -r ./src/adf_extensions.rb -b adf yourfile.adoc
 ```
 
-If you only want to use the Jira and Atlassian mention macros (for example, with the standard HTML backend), you can load just the macro:
+If you only want to use the macros (for example, with the standard HTML backend), you can load just the macro file(s):
 
 ```bash
 asciidoctor -r ./src/jira_macro.rb yourfile.adoc
+asciidoctor -r ./src/appfox_workflows_macro.rb yourfile.adoc
 ```
 
 > **Note:**  
-> `adf_extensions.rb` registers both the ADF converter and the macros for convenience.  
-> If you only need the macros, require `jira_macro.rb` directly.
-
----
-
-## Jira Inline Macro
-
-This project includes a **Jira inline macro** for easily linking to Jira issues from your AsciiDoc content.
-
-### Usage
-
-In your AsciiDoc file, use the macro as follows:
-
-```adoc
-jira:ISSUE-123[]
-jira:ISSUE-456[Custom link text]
-```
-
-- The macro will render as a link to the specified Jira issue.
-- You can optionally provide custom link text in the brackets.
-
-### Setting the Jira Base URL
-
-The macro uses the `JIRA_BASE_URL` environment variable to construct the link.  
-Set it when running Asciidoctor, for example:
-
-```bash
-JIRA_BASE_URL="https://your-company.atlassian.net" asciidoctor -r ./src/jira_macro.rb -b adf yourfile.adoc
-```
-
-If `JIRA_BASE_URL` is not set, the macro will output the original macro text as plain text and print a warning.
-
----
-
-## Atlassian Mention Inline Macro
-
-This project also includes an **Atlassian mention macro** for user mentions, which can resolve user IDs from Confluence Cloud.
-
-### Usage
-
-In your AsciiDoc file, use the macro as follows (note the use of underscores for spaces):
-
-```adoc
-atlasMention:Adrian_Partl[]
-```
-
-- The macro will look up the user "Adrian Partl" in Confluence Cloud and insert an ADF mention node (when using the `adf` backend).
-- For non-ADF backends (e.g., HTML), it will render as plain text `@Adrian Partl`.
-
-### Setting Confluence API Credentials
-
-The macro uses the following environment variables to connect to Confluence Cloud:
-
-- `CONFLUENCE_BASE_URL` (e.g., `https://your-company.atlassian.net`)
-- `CONFLUENCE_API_TOKEN`
-- `CONFLUENCE_USER_EMAIL`
-
-Set them when running Asciidoctor, for example:
-
-```bash
-CONFLUENCE_BASE_URL="https://your-company.atlassian.net" \
-CONFLUENCE_API_TOKEN="your-api-token" \
-CONFLUENCE_USER_EMAIL="your-email@example.com" \
-asciidoctor -r ./src/adf_extensions.rb -b adf yourfile.adoc
-```
-
-If credentials are missing or the user is not found, the macro will output `@Adrian Partl` as plain text.
-
----
-
-## Confluence Table of Contents (TOC) Macro
-
-You can insert a Confluence-style Table of Contents macro into your document using:
-
-```adoc
-:toc:
-```
-
-This will be converted to a Confluence TOC macro in the ADF output.
+> `adf_extensions.rb` registers both the ADF converter and all macros for convenience.  
+> If you only need the macros, require the relevant macro file(s) directly.
 
 ---
 
