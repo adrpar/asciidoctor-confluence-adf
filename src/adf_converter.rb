@@ -415,9 +415,13 @@ class AdfConverter < Asciidoctor::Converter::Base
   def parse_json_buffer(json_buffer, buffer, content_array)
     begin
       parsed_json = JSON.parse(json_buffer)
-      content_array << create_text_node(buffer) unless buffer.empty?
-      content_array << parsed_json unless parsed_json.empty?
-      buffer.clear
+      if parsed_json.empty?
+        buffer << json_buffer
+      else
+        content_array << create_text_node(buffer) unless buffer.empty?
+        content_array << parsed_json unless parsed_json.empty?
+        buffer.clear
+      end
     rescue JSON::ParserError
       buffer << json_buffer
     end
