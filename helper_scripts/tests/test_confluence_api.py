@@ -139,3 +139,87 @@ def test_upload_images_to_confluence_missing_file(tmp_path):
         confluence_api.upload_images_to_confluence(
             "https://example.atlassian.net", images, "12345", "user", "token"
         )
+
+
+def test_upload_images_to_confluence_skips_unchanged(tmp_path):
+    # Create a fake image file
+    img = tmp_path / "test.png"
+    img.write_bytes(b"fakeimg")
+    images = [str(img)]
+
+    # Patch checksum to match
+    with patch("requests.get") as mock_get, \
+         patch("requests.post") as mock_post, \
+         patch("helper_scripts.confluence_api._calculate_file_sha256", return_value="abc"), \
+         patch("helper_scripts.confluence_api._calculate_remote_sha256", return_value="abc"), \
+         patch("helper_scripts.confluence_api.get_page_attachments") as mock_get_attachments:
+
+        # Simulate existing attachment
+        mock_get_attachments.return_value = [{
+            "title": "test.png",
+            "extensions": {"fileId": "fileid-123"},
+            "id": "attid-1",
+            "_links": {"download": "/download/test.png"}
+        }]
+        current_files = {"test.png": "fileid-123"}
+
+        result = confluence_api.upload_images_to_confluence(
+            "https://example.atlassian.net", images, "12345", "user", "token", current_files
+        )
+        assert result["test.png"] == "fileid-123"
+        assert mock_post.call_count == 0  # No upload
+
+
+def test_upload_images_to_confluence_replaces_and_deletes(tmp_path):
+    # Create a fake image file
+    img = tmp_path / "test.png"
+    img.write_bytes(b"fakeimg")
+    images = [str(img)]
+
+    with patch("requests.get") as mock_get, \
+         patch("requests.post") as mock_post, \
+         patch("helper_scripts.confluence_api._calculate_file_sha256", return_value="abc"), \
+         patch("helper_scripts.confluence_api._calculate_remote_sha256", return_value="def"), \
+         patch("helper_scripts.confluence_api.get_page_attachments") as mock_get_attachments, \
+         patch("helper_scripts.confluence_api.delete_attachment") as mock_delete:
+
+        # Simulate existing attachment with different checksum
+        mock_get_attachments.return_value = [{
+            "title": "test.png",
+            "extensions": {"fileId": "fileid-123"},
+            "id": "attid-1",
+            "_links": {"download": "/download/test.png"}
+        }]
+        mock_response = MagicMock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = {
+            "results": [{"extensions": {"fileId": "fileid-456"}}]
+        }
+        mock_post.return_value = mock_response
+        current_files = {"test.png": "fileid-123"}
+
+        result = confluence_api.upload_images_to_confluence(
+            "https://example.atlassian.net", images, "12345", "user", "token", current_files
+        )
+        assert result["test.png"] == "fileid-456"
+        assert mock_post.call_count == 1  # Upload happened
+        mock_delete.assert_called_once_with(
+            "https://example.atlassian.net", "attid-1", "user", "token"
+        )
+
+
+def test_delete_attachment_success():
+    with patch("requests.delete") as mock_delete:
+        mock_response = MagicMock()
+        mock_response.status_code = 204
+        mock_delete.return_value = mock_response
+        assert confluence_api.delete_attachment("https://example.atlassian.net", "attid-1", "user", "token")
+
+
+def test_delete_attachment_failure():
+    with patch("requests.delete") as mock_delete:
+        mock_response = MagicMock()
+        mock_response.status_code = 400
+        mock_response.text = "Bad Request"
+        mock_delete.return_value = mock_response
+        assert not confluence_api.delete_attachment("https://example.atlassian.net", "attid-1", "user", "token")
