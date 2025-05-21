@@ -44,6 +44,7 @@ class AdfConverter < Asciidoctor::Converter::Base
     when 'embedded' then convert_embedded(node)
     when 'toc' then convert_toc(node)
     when 'literal' then convert_literal(node)
+    when 'pass' then convert_pass(node)
     else
       super
     end
@@ -371,6 +372,14 @@ class AdfConverter < Asciidoctor::Converter::Base
         create_text_node(node.content)
       ]
     }
+  end
+
+  def convert_pass(node)
+    if node.content_model == :raw
+      node.content
+    else
+      convert_content(node)
+    end
   end
 
   def parse_or_escape(text)

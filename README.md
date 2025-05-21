@@ -10,7 +10,7 @@ This converter transforms AsciiDoc documents into Atlassian Document Format (ADF
 - Supports Confluence-specific macros (e.g., anchors, TOC).
 - Includes a Jira inline macro for convenient issue linking.
 - Includes an Atlassian mention macro for user mentions, with Confluence Cloud user lookup.
-- **Supports Appfox Workflows for Confluence macros for metadata, approvers, and change tables.**
+- Supports Appfox Workflows for Confluence macros for metadata, approvers, and change tables.
 - Supports Confluence Table of Contents (TOC) macro via `:toc:`.
 - Automatically handles inline formatting (e.g., bold, italic, links).
 - Generates structured JSON for use in Confluence or other Atlassian tools.
