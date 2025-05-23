@@ -44,23 +44,29 @@ class AdfConverter < Asciidoctor::Converter::Base
     when 'embedded' then convert_embedded(node)
     when 'toc' then convert_toc(node)
     when 'literal' then convert_literal(node)
+    when 'pass' then convert_pass(node)
     else
       super
     end
   end
 
   def convert_document(node)
+    # Process sections if present
     sectioned = node.sections
     if sectioned && (node.attr? 'toc') && (node.attr? 'toc-placement', 'auto')
       convert_toc(node)
     end
+    
+    # Process all blocks in the document
+    node.blocks.each do |block|
+      convert(block)
+    end
 
-    a = node.content
-
+    # Return the document with the collected nodes
     {
       "version" => 1,
       "type" => "doc",
-      "content" => self.node_list.compact.empty? ? a : self.node_list.compact
+      "content" => self.node_list.compact.empty? ? [] : self.node_list.compact
     }.to_json
   end
 
@@ -113,13 +119,17 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def convert_table(node)
-    self.node_list << {
+    table_content = [
+      *convert_table_head_rows(node.rows[:head]),
+      *convert_table_body_rows(node.rows[:body])
+    ]
+    
+    table_node = {
       "type" => "table",
-      "content" => [
-        *convert_table_head_rows(node.rows[:head]),
-        *convert_table_body_rows(node.rows[:body])
-      ]
+      "content" => table_content
     }
+    
+    self.node_list << table_node
   end
 
   def convert_table_head_rows(head_rows)
@@ -158,6 +168,44 @@ class AdfConverter < Asciidoctor::Converter::Base
 
   def convert_table_body_cell(cell)
     cell_type = (cell.style == :header) ? "tableHeader" : "tableCell"
+    
+    if cell.style == :asciidoc
+      original_node_list = self.node_list.dup
+      self.node_list = []
+      
+      # Check if blocks are empty but text is present - common case with a| cells
+      if (cell.blocks.empty? || cell.blocks.nil?) && !cell.text.empty?
+        # Parse the text content into blocks
+        # We'll use a temporary document to parse the AsciiDoc content
+        cell_doc = Asciidoctor.load(cell.text, safe: :safe, backend: 'adf')
+        
+        cell_doc.blocks.each do |block|
+          convert(block)
+        end
+      else
+        cell.blocks.each do |block|
+          convert(block)
+        end
+      end
+      
+      cell_content_nodes = self.node_list
+      
+      self.node_list = original_node_list
+      
+      if cell_content_nodes.empty? && !cell.text.empty?
+        cell_content_nodes = [create_paragraph_node(parse_or_escape(cell.text))]
+      end
+      
+      return {
+        "type" => cell_type,
+        "attrs" => {
+          "colspan" => cell.colspan || 1,
+          "rowspan" => cell.rowspan || 1
+        },
+        "content" => cell_content_nodes
+      }
+    end
+    
     {
       "type" => cell_type,
       "attrs" => {
@@ -295,13 +343,6 @@ class AdfConverter < Asciidoctor::Converter::Base
     node
   end
 
-  def root_document(node)
-    while (node = node.document).nested?
-      node = node.parent_document
-    end
-    node
-  end
-
   def convert_inline_anchor(node)
     link_text = case node.type
     when :xref
@@ -371,6 +412,14 @@ class AdfConverter < Asciidoctor::Converter::Base
         create_text_node(node.content)
       ]
     }
+  end
+
+  def convert_pass(node)
+    if node.content_model == :raw
+      node.content
+    else
+      convert_content(node)
+    end
   end
 
   def parse_or_escape(text)

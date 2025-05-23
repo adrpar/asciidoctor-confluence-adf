@@ -1,10 +1,11 @@
 require 'net/http'
 require 'json'
 
-# Simple Confluence API client for user lookup
-class ConfluenceClient
-  def initialize(base_url:, api_token:, user_email:)
+# Simple Confluence and Jira API client
+class ConfluenceJiraClient
+  def initialize(base_url:, jira_base_url:, api_token:, user_email:)
     @base_url = base_url
+    @jira_base_url = jira_base_url
     @api_token = api_token
     @user_email = user_email
   end
@@ -37,6 +38,56 @@ class ConfluenceClient
     rescue => e
       warn ">>> WARN: Failed to query Confluence user: #{e}"
       nil
+    end
+  end
+
+  # Query Jira issues using JQL
+  def query_jira_issues(jql:, fields: nil)
+    uri = URI("#{@jira_base_url}/rest/api/2/search")
+    params = { 'jql' => jql }
+    params['fields'] = fields.join(',') if fields # Only add fields parameter if specified
+    uri.query = URI.encode_www_form(params)
+    
+    req = Net::HTTP::Get.new(uri)
+    req.basic_auth(@user_email, @api_token)
+    req['Accept'] = 'application/json'
+
+    begin
+      res = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https') do |http|
+        http.request(req)
+      end
+      
+      if res.code.to_i == 200
+        data = JSON.parse(res.body)
+        { success: true, data: data }
+      else
+        { success: false, error: "Jira API query failed: #{res.code} #{res.body}" }
+      end
+    rescue => e
+      { success: false, error: "Failed to query Jira: #{e}" }
+    end
+  end
+
+  # Get all available Jira fields metadata
+  def get_jira_fields
+    uri = URI("#{@jira_base_url}/rest/api/2/field")
+    req = Net::HTTP::Get.new(uri)
+    req.basic_auth(@user_email, @api_token)
+    req['Accept'] = 'application/json'
+
+    begin
+      res = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https') do |http|
+        http.request(req)
+      end
+      
+      if res.code.to_i == 200
+        fields = JSON.parse(res.body)
+        { success: true, fields: fields }
+      else
+        { success: false, error: "Failed to get Jira fields: #{res.code} #{res.body}" }
+      end
+    rescue => e
+      { success: false, error: "Error fetching Jira fields: #{e}" }
     end
   end
 end
