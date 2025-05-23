@@ -28,7 +28,6 @@ class JiraInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
   end
 end
 
-# Atlassian Mention Inline Macro
 class AtlasMentionInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
   use_dsl
 
@@ -39,6 +38,7 @@ class AtlasMentionInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
     name = target.tr('_', ' ')
     if parent.document.converter && parent.document.converter.backend == 'adf'
       confluence_base_url = ENV['CONFLUENCE_BASE_URL']
+      jira_base_url = ENV['JIRA_BASE_URL'] || confluence_base_url
       api_token = ENV['CONFLUENCE_API_TOKEN']
       user_email = ENV['CONFLUENCE_USER_EMAIL']
 
@@ -47,8 +47,9 @@ class AtlasMentionInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
         return { "type" => "text", "text" => "@#{name}" }
       end
 
-      client = ConfluenceClient.new(
+      client = ConfluenceJiraClient.new(
         base_url: confluence_base_url,
+        jira_base_url: jira_base_url,
         api_token: api_token,
         user_email: user_email
       )
@@ -71,17 +72,13 @@ class AtlasMentionInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
   end
 end
 
-# Refactoring of JiraIssuesTableBlockMacro
-
 class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
   use_dsl
 
   named :jiraIssuesTable
   name_positional_attributes 'jql'
 
-  # Main process method - orchestrates the overall flow
   def process(parent, target, attrs)
-    # Step 1: Validate input and setup
     return handle_invalid_attributes(parent, target, attrs) unless valid_attributes?(attrs)
     
     credentials = get_credentials
@@ -91,12 +88,15 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     jql = parse_jql(target, attrs)
     return handle_missing_jql(parent, target, attrs) if jql.nil? || jql.empty?
 
-    # Step 2: Query Jira API
     client = create_jira_client(credentials)
-    result = query_jira_issues(client, credentials, jql, fields)
-    field_result = get_field_metadata(client, credentials[:base_url])
     
-    # Step 3: Process and render the table
+    result = client.query_jira_issues(
+      jql: jql,
+      fields: fields
+    )
+    
+    field_result = client.get_jira_fields
+    
     if api_query_successful?(result)
       table_content = build_table(result[:data]['issues'], fields, field_result, credentials[:base_url])
       parse_content parent, table_content, {}
@@ -105,8 +105,7 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     end
   end
 
-  # Make these methods public for testing
-  def format_status(status_field)
+  def format_status_field(status_field)
     if status_field.is_a?(Hash)
       if status_field['statusCategory'] && status_field['statusCategory']['name']
         "#{status_field['name']} (#{status_field['statusCategory']['name']})"
@@ -121,31 +120,9 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
   def format_custom_field(field_value)
     case field_value
     when Array
-      if field_value.empty?
-        ""
-      elsif field_value.first.is_a?(Hash)
-        if field_value.first.key?("value")
-          field_value.map { |item| item["value"] }.join(", ")
-        elsif field_value.first.key?("name")
-          field_value.map { |item| item["name"] }.join(", ")
-        elsif field_value.first.key?("displayName")
-          field_value.map { |item| item["displayName"] }.join(", ")
-        else
-          field_value.map(&:to_s).join(", ")
-        end
-      else
-        field_value.join(", ")
-      end
+      format_array_field(field_value)
     when Hash
-      if field_value.key?("value")
-        field_value["value"].to_s
-      elsif field_value.key?("name")
-        field_value["name"].to_s
-      elsif field_value.key?("displayName")
-        field_value["displayName"].to_s
-      else
-        field_value.to_s
-      end
+      format_hash_field(field_value)
     when String
       format_string_field(field_value)
     when nil
@@ -155,9 +132,39 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     end
   end
 
-  private
+  # Handle array values in custom fields
+  def format_array_field(array_value)
+    if array_value.empty?
+      ""
+    elsif array_value.first.is_a?(Hash)
+      if array_value.first.key?("value")
+        array_value.map { |item| item["value"] }.join(", ")
+      elsif array_value.first.key?("name")
+        array_value.map { |item| item["name"] }.join(", ")
+      elsif array_value.first.key?("displayName")
+        array_value.map { |item| item["displayName"] }.join(", ")
+      else
+        array_value.map(&:to_s).join(", ")
+      end
+    else
+      array_value.join(", ")
+    end
+  end
 
-  # ---------- Input validation methods ----------
+  # Handle hash values in custom fields
+  def format_hash_field(hash_value)
+    if hash_value.key?("value")
+      hash_value["value"].to_s
+    elsif hash_value.key?("name")
+      hash_value["name"].to_s
+    elsif hash_value.key?("displayName")
+      hash_value["displayName"].to_s
+    else
+      hash_value.to_s
+    end
+  end
+
+  private
 
   def valid_attributes?(attrs)
     valid_attrs = ['jql', 'fields', '1']
@@ -174,8 +181,6 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
   def credentials_valid?(credentials)
     !credentials[:base_url].nil? && !credentials[:api_token].nil? && !credentials[:user_email].nil?
   end
-
-  # ---------- Error handling methods ----------
 
   def handle_invalid_attributes(parent, target, attrs)
     create_paragraph(parent, "jiraIssuesTable::#{target}[INVALID ATTRIBUTES]", {})
@@ -196,8 +201,6 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     create_paragraph(parent, "jiraIssuesTable::#{target}[fields=\"#{attrs['fields']}\"]", {})
   end
 
-  # ---------- Input parsing methods ----------
-
   def get_credentials
     {
       base_url: ENV['JIRA_BASE_URL'],
@@ -210,40 +213,25 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
   def parse_fields(attrs)
     fields_param = attrs['fields'] 
     fields = fields_param ? fields_param.split(',').map(&:strip) : nil
-    fields || ['key', 'summary', 'status']  # Default fields if none specified
+    fields || ['key', 'summary', 'status']
   end
 
   def parse_jql(target, attrs)
     target.to_s.empty? ? attrs['jql'] : target
   end
 
-  # ---------- API interaction methods ----------
-
   def create_jira_client(credentials)
-    ConfluenceClient.new(
+    ConfluenceJiraClient.new(
       base_url: credentials[:confluence_base_url],
+      jira_base_url: credentials[:base_url],
       api_token: credentials[:api_token],
       user_email: credentials[:user_email]
     )
   end
 
-  def query_jira_issues(client, credentials, jql, fields)
-    client.query_jira_issues(
-      jira_base_url: credentials[:base_url],
-      jql: jql,
-      fields: fields
-    )
-  end
-
-  def get_field_metadata(client, base_url)
-    client.get_jira_fields(jira_base_url: base_url)
-  end
-
   def api_query_successful?(result)
     result[:success] && result[:data] && result[:data]['issues']
   end
-
-  # ---------- Table building methods ----------
 
   def build_table(issues, fields, field_result, base_url)
     field_names = build_field_names_mapping(field_result)
@@ -281,10 +269,10 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
   def define_column_widths(fields)
     fields.map do |field_id|
       case field_id
-      when 'key' then '1'             # narrower column for keys
-      when 'summary' then '2'          # wider column for summary
-      when 'description' then '3'      # widest column for description
-      else '1'                         # default width for other fields
+      when 'key' then '1'
+      when 'summary' then '2'
+      when 'description' then '3'
+      else '1'
       end
     end
   end
@@ -310,15 +298,13 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     
     fields.each do |field|
       if field == 'key'
-        row_values << format_key(issue['key'], base_url)
+        row_values << format_key_field(issue['key'], base_url)
       elsif field == 'status' && issue['fields'] && issue['fields'][field]
-        row_values << format_status(issue['fields'][field])
+        row_values << format_status_field(issue['fields'][field])
       else
-        # Use the custom field formatter for all other fields
         field_value = issue['fields'] ? issue['fields'][field] : nil
         formatted = format_custom_field(field_value)
         
-        # Detect if this is a multiline field with bullets
         if formatted.include?("\n") && formatted.include?("- ")
           # Use AsciiDoc cell specifier for rich content
           row_values << "a|\n#{formatted}"
@@ -339,23 +325,20 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
         end
       else
         if idx == 0
-          "| #{value}"  # First cell needs the pipe
+          "| #{value}"
         else
-          " | #{value}"  # Other cells need pipe with space
+          " | #{value}"
         end
       end
     end.join("")
   end
 
-  # ---------- Field formatting methods ----------
-
-  def format_key(key, base_url)
+  def format_key_field(key, base_url)
     url = "#{base_url}/browse/#{key}"
     "link:#{url}[#{key}]"
   end
 
   def format_string_field(content)
-    # Process wiki links
     content = process_wiki_links(content)
     
     # Check if content contains bullet points or multiple paragraphs
@@ -391,7 +374,6 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
   end
 
   def format_complex_content(content)
-    # Split into lines
     lines = content.split(/[\r\n]+/)
     
     # Process each line
@@ -401,7 +383,6 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     lines.each do |line|
       line = line.rstrip
       
-      # Check if this line is a bold title (*Title:*)
       is_bold_title = line.match?(/^\s*\*[^*]+:\*\s*$/)
       
       # Add empty line before new bold section titles (except the first one)
@@ -411,18 +392,14 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
       
       # Process the line based on its type
       if line.strip.start_with?('*') && line.strip.match?(/^\*\s+/)
-        # This is a bullet point
         process_bullet_point(line, processed_lines)
       else
-        # This is a regular line
         processed_lines << process_regular_line(line)
       end
       
-      # Update the bold title flag
       last_line_was_bold_title = is_bold_title
     end
     
-    # Join lines back, keeping line breaks
     content = processed_lines.join("\n")
     
     # Escape pipes to avoid breaking table
@@ -469,8 +446,6 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     content.gsub(/\|/, "\\|")
   end
 
-  # ---------- Debug/info methods ----------
-
   def print_field_information_for_debugging(issues, field_result)
     # Use class variable instead of instance variable
     @@field_info_printed ||= false
@@ -501,13 +476,11 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
       end
     end
     
-    # Print field information
     puts ">>> JIRA FIELD REFERENCE:"
     puts ">>> ====================="
     puts ">>> Custom Fields:"
     puts ">>> -------------"
     
-    # First print custom fields
     field_map.each do |field_id, info|
       next unless info[:custom]
       used = used_fields[field_id] ? " (PRESENT IN RESULTS)" : ""
@@ -515,7 +488,6 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
       puts sprintf(">>>    Description: %s", info[:description]) if info[:description]
     end
     
-    # Then print standard fields
     puts ">>> "
     puts ">>> Standard Fields:"
     puts ">>> ---------------"

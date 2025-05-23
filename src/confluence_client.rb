@@ -2,9 +2,10 @@ require 'net/http'
 require 'json'
 
 # Simple Confluence and Jira API client
-class ConfluenceClient
-  def initialize(base_url:, api_token:, user_email:)
+class ConfluenceJiraClient
+  def initialize(base_url:, jira_base_url:, api_token:, user_email:)
     @base_url = base_url
+    @jira_base_url = jira_base_url
     @api_token = api_token
     @user_email = user_email
   end
@@ -41,8 +42,8 @@ class ConfluenceClient
   end
 
   # Query Jira issues using JQL
-  def query_jira_issues(jira_base_url:, jql:, fields: nil)
-    uri = URI("#{jira_base_url}/rest/api/2/search")
+  def query_jira_issues(jql:, fields: nil)
+    uri = URI("#{@jira_base_url}/rest/api/2/search")
     params = { 'jql' => jql }
     params['fields'] = fields.join(',') if fields # Only add fields parameter if specified
     uri.query = URI.encode_www_form(params)
@@ -68,8 +69,8 @@ class ConfluenceClient
   end
 
   # Get all available Jira fields metadata
-  def get_jira_fields(jira_base_url:)
-    uri = URI("#{jira_base_url}/rest/api/2/field")
+  def get_jira_fields
+    uri = URI("#{@jira_base_url}/rest/api/2/field")
     req = Net::HTTP::Get.new(uri)
     req.basic_auth(@user_email, @api_token)
     req['Accept'] = 'application/json'

@@ -316,7 +316,7 @@ class JiraMacroTest < Minitest::Test
       }
     }
     
-    formatted = macro.format_status(status_with_category)
+    formatted = macro.format_status_field(status_with_category)
     assert_equal "Review (In Progress)", formatted
     
     # Test with just status name
@@ -324,11 +324,11 @@ class JiraMacroTest < Minitest::Test
       "name" => "Done"
     }
     
-    formatted = macro.format_status(status_with_name)
+    formatted = macro.format_status_field(status_with_name)
     assert_equal "Done", formatted
     
     # Test with string input
-    formatted = macro.format_status("Simple String")
+    formatted = macro.format_status_field("Simple String")
     assert_equal "Simple String", formatted
   end
 
@@ -346,6 +346,141 @@ class JiraMacroTest < Minitest::Test
     # Test empty hash
     formatted = macro.format_custom_field({})
     assert_equal "{}", formatted
+  end
+
+  # Add a test for ADF conversion of complex formatting
+  def test_jira_issues_table_macro_with_complex_formatting_in_adf
+    setup_jira_env
+    
+    # Mock response with complex formatting in description field
+    complex_issues = {
+      "issues" => [
+        {
+          "key" => "DEMO-1",
+          "fields" => {
+            "summary" => "Issue with complex formatting",
+            "status" => { "name" => "In Progress", "statusCategory" => { "name" => "In Progress" } },
+            "description" => "*Overview:*\nThis is a complex issue with formatted content.\n\n*Key Points:*\n\n* First bullet point\n* Second bullet point\n* Third bullet point with *bold* text\n\n*Objectives:*\n\n* Primary goal\n* Secondary goal"
+          }
+        }
+      ]
+    }
+    
+    fields = standard_fields.dup
+    fields << { "id" => "customfield_10001", "name" => "Epic Link", "custom" => true, "schema" => { "type" => "string" } }
+
+    # Stub Net::HTTP.start to return our mock
+    Net::HTTP.stub :start, mock_api_responses(complex_issues, fields) do
+      # Use ADF backend for conversion
+      adoc_with_macros = 'jiraIssuesTable::["project = DEMO",fields="key,summary,description,status"]'
+      doc = Asciidoctor.load(adoc_with_macros, safe: :safe, backend: 'adf', extensions: proc { block_macro JiraIssuesTableBlockMacro })
+      adf_json = doc.converter.convert(doc, 'document')
+
+      # Parse the ADF output
+      adf_data = JSON.parse(adf_json)
+
+      # Test the structure
+      assert_equal "doc", adf_data["type"]
+      assert adf_data["content"].is_a?(Array)
+      
+      # Find the table in the content
+      table = adf_data["content"].find { |node| node["type"] == "table" }
+      assert table, "Should contain a table node"
+
+      # Test table structure
+      assert table["content"].is_a?(Array), "Table should have content"
+      
+      # Test table rows
+      assert table["content"].size >= 2, "Table should have at least 2 rows (header + data)"
+      
+      # Find the header row
+      header_row = table["content"].first
+      assert_equal "tableRow", header_row["type"]
+      assert header_row["content"].is_a?(Array)
+      
+      # Verify header cells
+      header_cells = header_row["content"]
+      header_names = header_cells.map { |cell| 
+        cell["content"].first["content"].first["text"] rescue nil 
+      }.compact
+      
+      assert_includes header_names, "Key"
+      assert_includes header_names, "Summary" 
+      assert_includes header_names, "Description"
+      assert_includes header_names, "Status"
+      
+      # Find the data row
+      data_row = table["content"][1]
+      assert_equal "tableRow", data_row["type"]
+      
+      # Get the cells of the data row
+      data_cells = data_row["content"]
+      assert_equal 4, data_cells.size, "Should have 4 columns in the data row"
+      
+      # Find the description cell (third cell)
+      description_cell = data_cells[2]
+      description_content = description_cell["content"]
+      
+      # Extract texts from description
+      texts = extract_all_texts(description_content)
+      
+      # Verify complex formatting elements
+      assert texts.any? { |t| t.include?("Overview") }, "Should include Overview heading"
+      assert texts.any? { |t| t.include?("Key Points") }, "Should include Key Points heading"
+      assert texts.any? { |t| t.include?("Objectives") }, "Should include Objectives heading"
+      assert texts.any? { |t| t.include?("First bullet point") }, "Should include first bullet point"
+      assert texts.any? { |t| t.include?("Second bullet point") }, "Should include second bullet point"
+      assert texts.any? { |t| t.include?("Third bullet point with") }, "Should include third bullet point"
+      assert texts.any? { |t| t.include?("bold") }, "Should include bold text"
+      assert texts.any? { |t| t.include?("Primary goal") }, "Should include primary goal"
+      
+      # Verify that the description contains proper structures
+      has_bullet_list = find_node_by_type(description_content, "bulletList")
+      assert has_bullet_list, "Should contain bullet lists in the description"
+      
+      # Verify status cell (fourth cell)
+      status_cell = data_cells[3]
+      status_text = status_cell["content"].first["content"].first["text"] rescue nil
+      assert_equal "In Progress (In Progress)", status_text
+    end
+  end
+
+  # Helper method to recursively extract all text nodes from ADF content
+  def extract_all_texts(content)
+    return [] unless content.is_a?(Array)
+    
+    result = []
+    content.each do |node|
+      if node["type"] == "text"
+        result << node["text"]
+      end
+      
+      # Process any child content
+      if node["content"].is_a?(Array)
+        result.concat(extract_all_texts(node["content"]))
+      end
+    end
+    
+    result
+  end
+
+  # Helper method to find a node of a specific type in ADF content
+  def find_node_by_type(content, type)
+    return nil unless content.is_a?(Array)
+    
+    # Look for the node type at this level
+    node = content.find { |n| n["type"] == type }
+    return node if node
+    
+    # Recursively search in child content
+    content.each do |child|
+      if child["content"].is_a?(Array)
+        found = find_node_by_type(child["content"], type)
+        return found if found
+      end
+    end
+    
+    nil
   end
 end
 

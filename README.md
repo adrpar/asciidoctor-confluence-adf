@@ -9,6 +9,7 @@ This converter transforms AsciiDoc documents into Atlassian Document Format (ADF
 - Converts AsciiDoc elements (e.g., paragraphs, lists, tables) into ADF-compliant JSON.
 - Supports Confluence-specific macros (e.g., anchors, TOC).
 - Includes a Jira inline macro for convenient issue linking.
+- Includes a Jira issues table macro to embed issue query results.
 - Includes an Atlassian mention macro for user mentions, with Confluence Cloud user lookup.
 - Supports Appfox Workflows for Confluence macros for metadata, approvers, and change tables.
 - Supports Confluence Table of Contents (TOC) macro via `:toc:`.
@@ -39,6 +40,41 @@ jira:ISSUE-456[Custom link text]
 - You can optionally provide custom link text in the brackets.
 
 Set the `JIRA_BASE_URL` environment variable to control the link target.
+
+---
+
+### Jira Issues Table Macro
+
+The **Jira issues table macro** allows you to embed query results from Jira directly into your document as a table.
+
+**Usage:**
+```adoc
+jiraIssuesTable::["project = DEMO", fields="key,summary,description,status"]
+```
+
+**Parameters:**
+- The macro target (between :: and [) is the JQL query to execute
+- The `fields` attribute specifies which Jira fields to include in the table
+
+**Example with more options:**
+```adoc
+jiraIssuesTable::["project = PRQ AND status = Review", fields="key,summary,description,customfield_10984,status"]
+```
+
+The macro will:
+1. Query Jira using the provided JQL
+2. Format the results in a table with the specified fields as columns
+3. Automatically format rich content in fields like description (including bullet lists, bold text, etc.)
+4. Create links to the Jira issues
+
+**Environment Variables:**
+- `JIRA_BASE_URL`: Base URL of your Jira instance
+- `CONFLUENCE_API_TOKEN`: API token for Jira authentication
+- `CONFLUENCE_USER_EMAIL`: Email for Jira authentication
+
+**Note:** The converter handles complex formatting in Jira fields differently based on the backend:
+- With HTML backend: Renders description fields with AsciiDoc formatting preserved
+- With ADF backend: Converts description formatting to proper ADF nodes (bullet lists, bold text, etc.)
 
 ---
 
@@ -124,7 +160,7 @@ bundle install
 
 ### Using in a Ruby Application
 
-To use the Asciidoctor ADF converter, include it in your Ruby application and specify the `adf` backend. Here’s a basic example:
+To use the Asciidoctor ADF converter, include it in your Ruby application and specify the `adf` backend. Here's a basic example:
 
 ```ruby
 require 'asciidoctor'
@@ -153,6 +189,8 @@ jira:ISSUE-123[]
 appfoxWorkflowMetadata:status[]
 workflowApproval:all[]
 workflowChangeTable:[]
+
+jiraIssuesTable::["project = DEMO", fields="key,summary,status"]
 ADOC
 
 output = Asciidoctor.convert(adoc, backend: 'adf', safe: :safe, header_footer: false)
@@ -437,6 +475,110 @@ ADF Output:
               ]
             }
           ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Jira Issues Table Macro
+AsciiDoc:
+```adoc
+jiraIssuesTable::["project = DEMO", fields="key,summary,description,status"]
+```
+
+ADF Output:
+```json
+{
+  "type": "table",
+  "attrs": {
+    "isNumberColumnEnabled": false,
+    "layout": "default"
+  },
+  "content": [
+    {
+      "type": "tableRow",
+      "content": [
+        {
+          "type": "tableHeader",
+          "attrs": { "colspan": 1, "rowspan": 1 },
+          "content": [{ "type": "paragraph", "content": [{ "text": "Key", "type": "text" }] }]
+        },
+        {
+          "type": "tableHeader",
+          "attrs": { "colspan": 1, "rowspan": 1 },
+          "content": [{ "type": "paragraph", "content": [{ "text": "Summary", "type": "text" }] }]
+        },
+        {
+          "type": "tableHeader",
+          "attrs": { "colspan": 1, "rowspan": 1 },
+          "content": [{ "type": "paragraph", "content": [{ "text": "Description", "type": "text" }] }]
+        },
+        {
+          "type": "tableHeader",
+          "attrs": { "colspan": 1, "rowspan": 1 },
+          "content": [{ "type": "paragraph", "content": [{ "text": "Status", "type": "text" }] }]
+        }
+      ]
+    },
+    {
+      "type": "tableRow",
+      "content": [
+        {
+          "type": "tableCell",
+          "attrs": { "colspan": 1, "rowspan": 1 },
+          "content": [{
+            "type": "paragraph",
+            "content": [{
+              "text": "DEMO-1",
+              "type": "text",
+              "marks": [{ "type": "link", "attrs": { "href": "https://jira.example.com/browse/DEMO-1" } }]
+            }]
+          }]
+        },
+        {
+          "type": "tableCell",
+          "attrs": { "colspan": 1, "rowspan": 1 },
+          "content": [{ "type": "paragraph", "content": [{ "text": "Issue summary", "type": "text" }] }]
+        },
+        {
+          "type": "tableCell",
+          "attrs": { "colspan": 1, "rowspan": 1 },
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [{ "text": "Overview:", "type": "text", "marks": [{ "type": "strong" }] }]
+            },
+            {
+              "type": "paragraph",
+              "content": [{ "text": "This is the issue description.", "type": "text" }]
+            },
+            {
+              "type": "bulletList",
+              "content": [
+                {
+                  "type": "listItem",
+                  "content": [{ 
+                    "type": "paragraph", 
+                    "content": [{ "text": "Bullet point 1", "type": "text" }]
+                  }]
+                },
+                {
+                  "type": "listItem",
+                  "content": [{ 
+                    "type": "paragraph", 
+                    "content": [{ "text": "Bullet point 2", "type": "text" }]
+                  }]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "tableCell",
+          "attrs": { "colspan": 1, "rowspan": 1 },
+          "content": [{ "type": "paragraph", "content": [{ "text": "In Progress", "type": "text" }] }]
         }
       ]
     }
