@@ -70,50 +70,40 @@ def process_paragraph_node(node, context, indent=""):
     """Process a paragraph node and convert to AsciiDoc paragraph."""
     paragraph_text = get_node_text_content(node, context)
     if paragraph_text.strip():
-        return [
-            f"{indent}{paragraph_text}\n"
-        ]  # Single newline to match test expectations
-    return [""]  # Empty string for empty paragraphs
+        return [f"{indent}{paragraph_text}\n"]
+    return [""]
 
 
 def process_table_node(node, context):
     """Process a table node and convert it to AsciiDoc."""
+    # TODO: Add support for table options like width, alignments, etc.
     result = ["|===\n"]
 
-    for row_index, row_node in enumerate(node.get("content", [])):
+    for row_node in node.get("content", []):
         if row_node.get("type") == "tableRow":
-            is_header = row_index == 0  # Treat the first row as the header
-            row_result = process_table_row_node(row_node, context, is_header)
+            row_result = process_table_row_node(row_node, context)
             result.append(row_result)
 
     result.append("|===\n")
     return "".join(result)
 
 
-def process_table_row_node(node, context, is_header=False):
+def process_table_row_node(node, context):
     """Process a table row node."""
     cells = []
-    for cell_index, cell_node in enumerate(node.get("content", [])):
-        # For header cells, we need to extract text differently
-        if is_header:
-            # Special handling for header cells
-            text = get_node_text_content(cell_node, context)
-            cells.append(f"| {text}")
-        else:
-            cell_text, is_complex = process_table_cell_node(
-                cell_node, context, is_header
-            )
+    for cell_node in node.get("content", []):
+        cell_text, is_complex = process_table_cell_node(cell_node, context)
 
-            # Always include a pipe for consistency
-            if is_complex:
-                cells.append(f"a| {cell_text}")
-            else:
-                cells.append(f"| {cell_text}")
+        # Always include a pipe for consistency
+        if is_complex:
+            cells.append(f"a| {cell_text}")
+        else:
+            cells.append(f"| {cell_text}")
 
     return " ".join(cells) + "\n"
 
 
-def process_table_cell_node(node, context, is_header):
+def process_table_cell_node(node, context):
     """Process a table cell node and convert it to AsciiDoc."""
     cell_context = context.copy()
     cell_context["in_table_cell"] = True
@@ -172,31 +162,8 @@ def process_list_node(node, context, indent=""):
     # Process each list item
     for item_node in node.get("content", []):
         if item_node.get("type") == "listItem":
-            # Get indentation level
-            level = context.get("list_depth", 1)
-            item_marker = marker * level
-
-            # Create a context specific to this list item
-            item_context = context.copy()
-            item_context["list_item_indent"] = f"{item_marker} "
-
-            # Process the list item content
-            item_lines = []
-            for content_node in item_node.get("content", []):
-                # Add the list marker to the first paragraph
-                if content_node.get("type") == "paragraph" and not item_lines:
-                    para_indent = "" if context.get("in_table_cell") else indent
-                    item_text = "".join(
-                        process_node(content_node, item_context)
-                    ).rstrip()
-                    item_lines.append(f"{para_indent}{item_marker} {item_text}")
-                else:
-                    # For subsequent paragraphs or other node types
-                    item_content = "".join(
-                        process_node(content_node, item_context)
-                    ).rstrip()
-                    if item_content:
-                        item_lines.append(f"{indent}  {item_content}")
+            # Process the list item content using the extracted method
+            item_lines = process_list_item_content(item_node, context, indent)
 
             # Add the list item to the result
             result.append("\n".join(item_lines))
@@ -214,34 +181,6 @@ def process_list_node(node, context, indent=""):
         return [f"\n{joined_result}\n\n"]
     else:
         return [f"\n{joined_result}"]
-
-
-def process_list_item_node(node, context, indent=""):
-    """Process a list item node and convert to AsciiDoc list item."""
-    result = []
-    marker = (
-        "*" * context.get("list_depth", 1)
-        if context.get("in_bullet_list", True)
-        else "." * context.get("list_depth", 1)
-    )
-    item_lines = []
-
-    for content_node in node.get("content", []):
-        if content_node.get("type") in ["bulletList", "orderedList"]:
-            # Add a blank line before nested list for AsciiDoc
-            if item_lines:
-                result.append(f"{indent}{marker} {' '.join(item_lines)}\n")
-                item_lines = []
-            result.extend(process_node(content_node, context, indent))
-        else:
-            # Each paragraph or text node in a list item should be a separate line
-            text = "".join(process_node(content_node, context, indent)).strip()
-            if text:
-                item_lines.append(text)
-
-    if item_lines:
-        result.append(f"{indent}{marker} {' '.join(item_lines)}\n")
-    return result
 
 
 def process_code_block_node(node, context):
@@ -443,7 +382,8 @@ def process_node(node, context, indent=""):
     elif node_type in ["bulletList", "orderedList"]:
         return process_list_node(node, context, indent)
     elif node_type == "listItem":
-        return process_list_item_node(node, context, indent)
+        item_lines = process_list_item_content(node, context, indent)
+        return ["\n".join(item_lines)]
     elif node_type == "codeBlock":
         return process_code_block_node(node, context)
     elif node_type == "extension":
@@ -507,25 +447,54 @@ def update_adf_media_ids(adf_json, filename_to_fileid):
     return updated_adf
 
 
-def process_bullet_list_node(node, context):
-    """Process a bullet list node and convert to AsciiDoc bullet list."""
-    result = ["\n"]  # Add a blank line before the list starts
+def process_list_item_content(item_node, context, indent=""):
+    """
+    Process the content of a list item and format it for AsciiDoc.
 
-    # Process each list item
-    for item in node.get("content", []):
-        result.extend(process_bullet_list_item_node(item, context))
+    Args:
+        item_node: The list item node to process
+        context: The current processing context
+        indent: The current indentation level
 
-    result.append("\n")  # Add a blank line after the list ends
-    return result
+    Returns:
+        list: Formatted list item content lines
+    """
+    item_marker = (
+        "*" * context.get("list_depth", 1)
+        if context.get("in_bullet_list", True)
+        else "." * context.get("list_depth", 1)
+    )
 
+    level = context.get("list_depth", 1)
 
-def process_ordered_list_node(node, context):
-    """Process an ordered list node and convert to AsciiDoc ordered list."""
-    result = ["\n"]  # Add a blank line before the list starts
+    item_lines = []
+    item_context = context.copy()
+    item_context["list_item_indent"] = f"{item_marker * level} "
 
-    # Process each list item
-    for item in node.get("content", []):
-        result.extend(process_ordered_list_item_node(item, context))
+    for content_node in item_node.get("content", []):
+        # Add the list marker to the first paragraph
+        if content_node.get("type") == "paragraph" and not item_lines:
+            para_indent = "" if context.get("in_table_cell") else indent
+            item_text = "".join(process_node(content_node, item_context)).rstrip()
+            item_lines.append(f"{para_indent}{item_marker} {item_text}")
+        elif content_node.get("type") in ["bulletList", "orderedList"]:
+            # Handle nested lists - finish current item first
+            if item_lines:
+                # We've already started this item, so add a line break
+                nested_result = "".join(
+                    process_node(content_node, item_context, indent + "  ")
+                )
+                item_lines.append(f"\n{nested_result}")
+            else:
+                # This is a nested list at the start of an item
+                nested_result = "".join(
+                    process_node(content_node, item_context, indent)
+                )
+                item_lines.append(f"{para_indent}{item_marker}\n{nested_result}")
+        else:
+            # For subsequent paragraphs or other node types
+            item_content = "".join(process_node(content_node, item_context)).rstrip()
+            if item_content:
+                item_lines.append(f"{indent}  {item_content}")
 
-    result.append("\n")  # Add a blank line after the list ends
-    return result
+    return item_lines

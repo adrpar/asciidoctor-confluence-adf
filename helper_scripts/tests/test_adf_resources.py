@@ -319,7 +319,7 @@ def test_links_in_table_cells():
         ],
     }
     context = {}
-    result, _ = process_table_cell_node(node, context, is_header=False)
+    result, _ = process_table_cell_node(node, context)
     assert "link:https://ada.com[Ada website]" in result
 
 
@@ -343,7 +343,7 @@ def test_pipe_character_in_table_cells():
         ],
     }
     context = {}
-    result, _ = process_table_cell_node(node, context, is_header=False)
+    result, _ = process_table_cell_node(node, context)
     assert "Product & Design \\| Team Assessment" in result
 
 
@@ -357,7 +357,7 @@ def test_multiple_paragraphs_in_table_cell():
         ],
     }
     context = {}
-    result = process_table_cell_node(node, context, is_header=False)
+    result = process_table_cell_node(node, context)
     assert "Paragraph 1\nParagraph 2" in result
 
 
@@ -533,7 +533,7 @@ def test_bullet_list_in_table_cell():
     }
 
     context = {}
-    result, _ = process_table_cell_node(node, context, is_header=False)
+    result, _ = process_table_cell_node(node, context)
 
     # Verify that each bullet point is formatted correctly within the table cell
     assert "* First bullet item" in result
