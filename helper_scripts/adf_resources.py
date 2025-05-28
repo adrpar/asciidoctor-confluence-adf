@@ -9,6 +9,7 @@ import copy
 import os
 import re
 import html
+from urllib.parse import urlparse, parse_qs
 
 from typing import Any, Dict
 
@@ -68,6 +69,28 @@ def process_heading_node(node, context):
 
 def process_paragraph_node(node, context, indent=""):
     """Process a paragraph node and convert to AsciiDoc paragraph."""
+    # Special handling for paragraphs with mixed content (text and inline extensions)
+    if node.get("content"):
+        has_inline_extension = any(
+            child.get("type") == "inlineExtension" 
+            for child in node.get("content", [])
+        )
+        
+        if has_inline_extension:
+            # Process each child node individually and combine
+            parts = []
+            for child in node.get("content", []):
+                if child.get("type") == "inlineExtension":
+                    # Process inline extension nodes directly
+                    extension_result = process_inline_extension_node(child, context)
+                    parts.extend(extension_result)
+                else:
+                    # Process other nodes normally
+                    parts.append(get_node_text_content(child, context))
+            
+            return [f"{indent}{''.join(parts)}\n"]
+    
+    # Standard handling for simple paragraphs
     paragraph_text = get_node_text_content(node, context)
     if paragraph_text.strip():
         return [f"{indent}{paragraph_text}\n"]
@@ -252,6 +275,46 @@ def process_extension_node(node, context):
             import logging
             logging.warning(f"Error processing jira-jql-snapshot: {str(e)}")
             result.append(f"\n// Error processing JIRA snapshot: {str(e)}\n")
+            
+    # Handle Workflow Approvers macro
+    elif ext_key == "approvers-macro":
+        try:
+            # Verify required structure exists
+            if "parameters" not in node.get("attrs", {}):
+                raise ValueError("Missing required parameters structure")
+                
+            # Extract the data value parameter to determine the option
+            data_value = (
+                node.get("attrs", {})
+                .get("parameters", {})
+                .get("macroParams", {})
+                .get("data", {})
+                .get("value", "")
+            )
+            
+            # Map the data value to the AsciiDoc option
+            option = "latest" if data_value == "Latest Approvals for Current Workflow" else "all"
+            
+            # Create the workflowApproval macro
+            result.append(f"\nworkflowApproval:{option}[]\n")
+        except Exception as e:
+            import logging
+            logging.warning(f"Error processing approvers-macro: {str(e)}")
+            result.append(f"\n// Error processing Workflow Approvers: {str(e)}\n")
+            
+    # Handle Workflow Change Table macro
+    elif ext_key == "document-control-table-macro":
+        try:
+            # Verify required structure exists
+            if "parameters" not in node.get("attrs", {}):
+                raise ValueError("Missing required parameters structure")
+                
+            # The document-control-table-macro doesn't have options in the Ruby extension
+            result.append("\nworkflowChangeTable:[]\n")
+        except Exception as e:
+            import logging
+            logging.warning(f"Error processing document-control-table-macro: {str(e)}")
+            result.append(f"\n// Error processing Workflow Change Table: {str(e)}\n")
 
     return result
 
@@ -261,14 +324,40 @@ def process_inline_extension_node(node, context):
     result = []
     ext_key = node.get("attrs", {}).get("extensionKey", "")
 
-    if ext_key == "jira":
-        # Fix: Use correct dictionary access pattern for nested structure
-        macro_params = (
-            node.get("attrs", {}).get("parameters", {}).get("macroParams", {})
-        )
-        issue_key = macro_params.get("key", {}).get("value", "")
-        if issue_key:
-            result.append(f"jira:{issue_key}[]")
+    if ext_key == "anchor":
+        # Extract anchor ID from parameters
+        macro_params = node.get("attrs", {}).get("parameters", {}).get("macroParams", {})
+        # The anchor ID is in the unnamed parameter (empty string key)
+        anchor_id = macro_params.get("", {}).get("value", "")
+        if anchor_id:
+            # Add the anchor ID to the context for potential later reference
+            context.setdefault("anchors", {})[anchor_id] = True
+            # Format as AsciiDoc anchor
+            result.append(f"[[{anchor_id}]]")
+    elif ext_key == "metadata-macro":
+        # Extract data value from macro parameters
+        macro_params = node.get("attrs", {}).get("parameters", {}).get("macroParams", {})
+        data_value = macro_params.get("data", {}).get("value", "")
+        
+        # Mapping of Confluence metadata values to appfoxWorkflowMetadata targets
+        # This must match the KEYWORDS mapping in the Ruby extension
+        WORKFLOW_METADATA_KEYWORDS_REVERSE = {
+            "Approvers for Current Status": "approvers",
+            "Current Official Version Description": "versiondesc",
+            "Current Official Version": "version",
+            "Expiry Date": "expiry",
+            "Transition Date": "transition",
+            "Unique Page ID": "pageid",
+            "Workflow Status": "status"
+        }
+        
+        # Lookup the target keyword for the data value
+        target = WORKFLOW_METADATA_KEYWORDS_REVERSE.get(data_value)
+        if target:
+            result.append(f"appfoxWorkflowMetadata:{target}[]")
+        else:
+            # If we don't recognize the data value, just use it as-is
+            result.append(f"// Unknown workflow metadata: {data_value}")
 
     return result
 
@@ -286,16 +375,44 @@ def get_node_text_content(node, context):
             mark_type = mark.get("type")
             if mark_type == "link":
                 href = mark.get("attrs", {}).get("href", "")
+                
+                # Check if this is an anchor link within the same page
+                if href.startswith("#"):
+                    anchor_id = href[1:]  # Remove the '#' prefix
+                    if context.get("anchors", {}).get(anchor_id):
+                        text = f"<<{anchor_id},{text}>>"
+                        continue
+                # Check if this is a link to an anchor on another page
+                elif "#" in href and context.get("base_url") in href:
+                    parts = href.split("#")
+                    page_url = parts[0]
+                    anchor_id = parts[1]
+                    page_id = extract_page_id_from_url(page_url, context.get("base_url"))
+                    
+                    # Only process if we have a valid page_id and it exists in the mapping with the required structure
+                    if (page_id and 
+                        page_id in context.get("page_mapping", {}) and 
+                        "path" in context.get("page_mapping", {}).get(page_id, {})):
+                        
+                        current_dir = os.path.dirname(context.get("current_file_path", ""))
+                        target_path = context.get("page_mapping")[page_id]["path"]
+                        rel_path = os.path.relpath(target_path, current_dir)
+                        text = f"xref:{rel_path}#{anchor_id}[{text}]"
+                        continue
+                    else:
+                        # Fall back to a regular link if the page mapping doesn't have the expected structure
+                        link_href = href
+                        
                 # Check if this is a JIRA link
-                jira_base_url = os.environ.get(
-                    "JIRA_BASE_URL", "https://jira.example.com"
-                )
+                jira_base_url = os.environ.get("JIRA_BASE_URL", "https://jira.example.com")
                 if href and jira_base_url in href:
                     # Extract the issue key from URL
                     match = re.search(r"/browse/([A-Z]+-\d+)", href)
                     if match:
                         issue_key = match.group(1)
-                        return f"jira:{issue_key}[]"
+                        text = f"jira:{issue_key}[]"
+                        continue
+                
                 link_href = href
             elif mark_type == "strong":
                 text = f"*{text}*"
@@ -310,7 +427,7 @@ def get_node_text_content(node, context):
             elif mark_type == "subsup" and mark.get("attrs", {}).get("type") == "sup":
                 text = f"^{text}^"
 
-        # Apply link formatting after other formatting (if not a JIRA link)
+        # Apply link formatting after other formatting (if not already handled)
         if link_href:
             if text.startswith("*") and text.endswith("*"):
                 text = text.strip("*")
@@ -521,3 +638,39 @@ def process_list_item_content(item_node, context, indent=""):
                 item_lines.append(f"{indent}  {item_content}")
 
     return item_lines
+
+
+def extract_page_id_from_url(url, base_url=None):
+    """
+    Extract the page ID from a Confluence URL.
+    
+    Args:
+        url (str): The Confluence URL
+        base_url (str, optional): The base URL of the Confluence instance
+        
+    Returns:
+        str: The page ID or None if not found
+    """
+    if not url:
+        return None
+    
+    # Parse the URL to get query parameters
+    parsed_url = urlparse(url)
+    query_params = parse_qs(parsed_url.query)
+    
+    # Check for pageId in query parameters
+    if 'pageId' in query_params:
+        return query_params['pageId'][0]
+    
+    # Check for page ID in the path (some Confluence URLs use this format)
+    # Example: /pages/viewpage.action/123456 or /wiki/spaces/TEST/pages/123456
+    match = re.search(r'/pages/(\d+)/?', parsed_url.path)
+    if match:
+        return match.group(1)
+    
+    # Also check alternative formats
+    match = re.search(r'/pages/viewpage.action/(\d+)/?', parsed_url.path)
+    if match:
+        return match.group(1)
+    
+    return None

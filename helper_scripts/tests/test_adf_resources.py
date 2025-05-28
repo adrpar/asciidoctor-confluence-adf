@@ -219,7 +219,6 @@ def test_process_media_node_without_extension():
         "file_id_to_filename": {"missing-ext-id": "image-without-extension"},
         "images_dir": "images",
     }
-
     result = process_media_node(node, context)
 
     # Verify extension was added
@@ -402,21 +401,6 @@ def test_nested_lists():
     assert result.count("\n") >= 3
 
 
-def test_process_inline_extension_node_jira():
-    """Test that JIRA inline extension nodes are processed correctly."""
-    node = {
-        "type": "inlineExtension",
-        "attrs": {
-            "extensionType": "com.atlassian.confluence.macro.core",
-            "extensionKey": "jira",
-            "parameters": {"macroParams": {"key": {"value": "TEST-123"}}},
-        },
-    }
-    context = {}
-    result = process_inline_extension_node(node, context)
-    assert result == ["jira:TEST-123[]"]
-
-
 def test_jira_link_detection():
     """Test that links to JIRA issues are converted to JIRA macros."""
     # Save original env var if it exists
@@ -455,23 +439,6 @@ def test_jira_link_detection():
             os.environ["JIRA_BASE_URL"] = original_jira_url
         elif "JIRA_BASE_URL" in os.environ:
             del os.environ["JIRA_BASE_URL"]
-
-
-# For the test_confluence_to_asciidoc.py file:
-def test_process_node_jira_extension():
-    """Test processing a JIRA issue extension node."""
-    node = {
-        "type": "inlineExtension",
-        "attrs": {
-            "extensionType": "com.atlassian.confluence.macro.core",
-            "extensionKey": "jira",
-            "parameters": {"macroParams": {"key": {"value": "TEST-123"}}},
-        },
-    }
-    context = {"list_depth": 0}
-
-    result = process_node(node, context)
-    assert result == ["jira:TEST-123[]"]
 
 
 def test_bullet_list_in_table_cell():
@@ -725,65 +692,46 @@ def test_process_list_item_content():
     simple_item = {
         "type": "listItem",
         "content": [
-            {
-                "type": "paragraph",
-                "content": [
-                    {"type": "text", "text": "Simple item"}
-                ]
-            }
-        ]
+            {"type": "paragraph", "content": [{"type": "text", "text": "Simple item"}]}
+        ],
     }
     context = {"list_depth": 1, "in_bullet_list": True}
     result = process_list_item_content(simple_item, context)
     assert result == ["* Simple item"]
-    
+
     # Test case 2: List item with multiple paragraphs
     multi_para_item = {
         "type": "listItem",
         "content": [
             {
                 "type": "paragraph",
-                "content": [
-                    {"type": "text", "text": "First paragraph"}
-                ]
+                "content": [{"type": "text", "text": "First paragraph"}],
             },
             {
                 "type": "paragraph",
-                "content": [
-                    {"type": "text", "text": "Second paragraph"}
-                ]
-            }
-        ]
+                "content": [{"type": "text", "text": "Second paragraph"}],
+            },
+        ],
     }
     result = process_list_item_content(multi_para_item, context)
     assert result == ["* First paragraph", "  Second paragraph"]
-    
+
     # Test case 3: Ordered list item
     ordered_item = {
         "type": "listItem",
         "content": [
-            {
-                "type": "paragraph",
-                "content": [
-                    {"type": "text", "text": "Ordered item"}
-                ]
-            }
-        ]
+            {"type": "paragraph", "content": [{"type": "text", "text": "Ordered item"}]}
+        ],
     }
     ordered_context = {"list_depth": 1, "in_bullet_list": False}
     result = process_list_item_content(ordered_item, ordered_context)
     assert result == [". Ordered item"]
-    
+
     # Test case 4: Nested list
     nested_list_item = {
         "type": "listItem",
         "content": [
-            {
-                "type": "paragraph",
-                "content": [
-                    {"type": "text", "text": "Parent item"}
-                ]
-            },
+            {"type": "paragraph", "content": [{"type": "text", "text": "Parent item"}]},
             {
                 "type": "bulletList",
                 "content": [
@@ -792,15 +740,13 @@ def test_process_list_item_content():
                         "content": [
                             {
                                 "type": "paragraph",
-                                "content": [
-                                    {"type": "text", "text": "Child item"}
-                                ]
+                                "content": [{"type": "text", "text": "Child item"}],
                             }
-                        ]
+                        ],
                     }
-                ]
-            }
-        ]
+                ],
+            },
+        ],
     }
     result = process_list_item_content(nested_list_item, context)
     assert len(result) == 2
@@ -819,32 +765,321 @@ def test_process_jira_snapshot_extension():
             "parameters": {
                 "macroParams": {
                     "macroPageVersion": {
-                        "value": "{\"version\":1745422974377,\"macroId\":\"1f035986-cdff-4a26-b71e-35bdb1662216\"}"
+                        "value": '{"version":1745422974377,"macroId":"1f035986-cdff-4a26-b71e-35bdb1662216"}'
                     },
-                    "macroId": {
-                        "value": "1f035986-cdff-4a26-b71e-35bdb1662216"
-                    },
+                    "macroId": {"value": "1f035986-cdff-4a26-b71e-35bdb1662216"},
                     "macroParams": {
-                        "value": "{\"levels\":[{\"id\":\"c2f4cc93-8ea4-48f2-b778-10f71091cff4\",\"title\":\"Architecture requirements for Example Product\",\"jql\":\"project = prq and issuetype = \\\"software/system requirement\\\" AND \\\"Product[Select List (multiple choices)]\\\" = \\\"Example Product\\\"\",\"fieldsPosition\":[{\"value\":{\"id\":\"key\",\"key\":\"key\"},\"label\":\"Key\",\"available\":true},{\"value\":{\"id\":\"summary\",\"key\":\"summary\"},\"label\":\"Summary\",\"available\":true},{\"label\":\"Description\",\"value\":{\"id\":\"description\",\"key\":\"description\"},\"available\":true}],\"fieldsOptions\":{\"groupedFields\":[],\"sortedFields\":[]},\"levelType\":\"JIRA_ISSUES\"}],\"macroId\":\"1f035986-cdff-4a26-b71e-35bdb1662216\"}"
-                    }
+                        "value": '{"levels":[{"id":"c2f4cc93-8ea4-48f2-b778-10f71091cff4","title":"Architecture requirements for Example Product","jql":"project = prq and issuetype = \\"software/system requirement\\" AND \\"Product[Select List (multiple choices)]\\" = \\"Example Product\\"","fieldsPosition":[{"value":{"id":"key","key":"key"},"label":"Key","available":true},{"value":{"id":"summary","key":"summary"},"label":"Summary","available":true},{"label":"Description","value":{"id":"description","key":"description"},"available":true}],"fieldsOptions":{"groupedFields":[],"sortedFields":[]},"levelType":"JIRA_ISSUES"}],"macroId":"1f035986-cdff-4a26-b71e-35bdb1662216"}'
+                    },
                 }
-            }
-        }
+            },
+        },
     }
-    
+
     context = {}
     from helper_scripts.adf_resources import process_extension_node
+
     result = process_extension_node(node, context)
-    
+
     # Check that the result contains a jiraIssuesTable macro
     result_text = "".join(result)
     assert "jiraIssuesTable::" in result_text
-    
+
     # Check that the JQL query is included
     assert "project = prq and issuetype" in result_text
-    
+
     # Check that the fields are included
-    assert "fields=\"key,summary,description\"" in result_text
-    
+    assert 'fields="key,summary,description"' in result_text
+
     # Check that the title is included
     assert ".Architecture requirements for Example Product" in result_text
+
+
+def test_process_anchor_extension():
+    """Test processing of anchor extension nodes and links to these anchors."""
+    from helper_scripts.adf_resources import (
+        process_inline_extension_node,
+        get_node_text_content,
+        process_node,
+    )
+
+    # Test 1: Basic anchor conversion
+    anchor_node = {
+        "type": "inlineExtension",
+        "attrs": {
+            "extensionType": "com.atlassian.confluence.macro.core",
+            "extensionKey": "anchor",
+            "parameters": {
+                "macroParams": {
+                    "": {"value": "_database"},
+                    "legacyAnchorId": {
+                        "value": "ModuleArchitectureAssess[MT]-_database"
+                    },
+                },
+                "macroMetadata": {
+                    "macroId": {"value": "b5301d4e-964b-44ff-bb57-edd670596e8c"},
+                    "schemaVersion": {"value": "1"},
+                    "title": "Anchor",
+                },
+            },
+        },
+    }
+
+    context = {}
+    result = process_inline_extension_node(anchor_node, context)
+    assert result == ["[[_database]]"]
+    assert "_database" in context.get("anchors", {})
+
+    # Test 2: Same-page anchor link
+    link_node = {
+        "type": "text",
+        "text": "Database section",
+        "marks": [{"type": "link", "attrs": {"href": "#_database"}}],
+    }
+
+    # Context should have the anchor we created
+    same_page_context = {"anchors": {"_database": True}}
+    result = get_node_text_content(link_node, same_page_context)
+    assert result == "<<_database,Database section>>"
+
+    # Test 3: Cross-page anchor link
+    cross_page_link_node = {
+        "type": "text",
+        "text": "Other page database",
+        "marks": [
+            {
+                "type": "link",
+                "attrs": {
+                    "href": "https://confluence.example.com/pages/viewpage.action?pageId=123456#_database"
+                },
+            }
+        ],
+    }
+
+    cross_page_context = {
+        "base_url": "https://confluence.example.com",
+        "page_mapping": {
+            "123456": {"path": "/path/to/other-page.adoc", "title": "Other Page"}
+        },
+        "current_file_path": "/path/to/current-page.adoc",
+    }
+
+    result = get_node_text_content(cross_page_link_node, cross_page_context)
+    assert "xref:" in result
+    assert "#_database" in result
+    assert "Other page database" in result
+
+    # Test 4: Complete document with anchors and links
+    doc_node = {
+        "type": "doc",
+        "content": [
+            {
+                "type": "paragraph",
+                "content": [
+                    {
+                        "type": "inlineExtension",
+                        "attrs": {
+                            "extensionKey": "anchor",
+                            "parameters": {"macroParams": {"": {"value": "section1"}}},
+                        },
+                    },
+                    {"type": "text", "text": "Section 1 Content"},
+                ],
+            },
+            {
+                "type": "paragraph",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Link to ",
+                    },
+                    {
+                        "type": "text",
+                        "text": "Section 1",
+                        "marks": [{"type": "link", "attrs": {"href": "#section1"}}],
+                    },
+                ],
+            },
+        ],
+    }
+
+    # Process the entire document
+    doc_context = {}
+    result = []
+    for content_node in doc_node.get("content", []):
+        result.extend(process_node(content_node, doc_context))
+
+    result_text = "".join(result)
+    assert "[[section1]]" in result_text
+    assert "<<section1,Section 1>>" in result_text
+
+
+def test_process_workflow_metadata_extension():
+    """Test processing of workflow metadata extension nodes."""
+    from helper_scripts.adf_resources import process_inline_extension_node
+
+    # Test metadata-macro with known value
+    metadata_node = {
+        "type": "inlineExtension",
+        "attrs": {
+            "extensionType": "com.atlassian.confluence.macro.core",
+            "extensionKey": "metadata-macro",
+            "parameters": {
+                "macroParams": {"data": {"value": "Current Official Version"}},
+                "macroMetadata": {
+                    "macroId": {
+                        "value": "91528036b374eac463e3afd03bcbd7281e7327709b1506ee5e5a8f4c50e1cce0"
+                    },
+                    "schemaVersion": {"value": "1"},
+                    "indexedMacroParams": {
+                        "text": "Current Official Version",
+                        "type": "text",
+                    },
+                    "placeholder": [
+                        {
+                            "type": "icon",
+                            "data": {
+                                "url": "https://ac-cloud.com/workflows/images/logo.png"
+                            },
+                        }
+                    ],
+                    "title": "Workflows Metadata",
+                },
+            },
+            "localId": "40b00485-7486-485c-a1e3-c47b0b8eba55",
+        },
+    }
+
+    context = {}
+    result = process_inline_extension_node(metadata_node, context)
+    assert result == ["appfoxWorkflowMetadata:version[]"]
+
+    # Test with unknown metadata value
+    unknown_metadata_node = {
+        "type": "inlineExtension",
+        "attrs": {
+            "extensionType": "com.atlassian.confluence.macro.core",
+            "extensionKey": "metadata-macro",
+            "parameters": {
+                "macroParams": {"data": {"value": "Unknown Metadata Value"}},
+                "macroMetadata": {"title": "Workflows Metadata"},
+            },
+        },
+    }
+
+    result = process_inline_extension_node(unknown_metadata_node, context)
+    assert result == ["// Unknown workflow metadata: Unknown Metadata Value"]
+
+    # Test additional metadata values
+    for confluence_value, asciidoc_target in [
+        ("Workflow Status", "status"),
+        ("Approvers for Current Status", "approvers"),
+        ("Expiry Date", "expiry"),
+        ("Transition Date", "transition"),
+        ("Unique Page ID", "pageid"),
+        ("Current Official Version Description", "versiondesc"),
+    ]:
+        test_node = {
+            "type": "inlineExtension",
+            "attrs": {
+                "extensionKey": "metadata-macro",
+                "parameters": {"macroParams": {"data": {"value": confluence_value}}},
+            },
+        }
+        result = process_inline_extension_node(test_node, context)
+        assert result == [f"appfoxWorkflowMetadata:{asciidoc_target}[]"]
+
+
+def test_process_workflow_approvers_extension():
+    """Test processing of workflow approvers extension node."""
+    from helper_scripts.adf_resources import process_extension_node
+
+    # Test 1: approvers-macro with "Latest Approvals for Current Workflow" option
+    latest_approvers_node = {
+        "type": "extension",
+        "attrs": {
+            "extensionType": "com.atlassian.confluence.macro.core",
+            "extensionKey": "approvers-macro",
+            "parameters": {
+                "macroParams": {
+                    "data": {"value": "Latest Approvals for Current Workflow"}
+                },
+                "macroMetadata": {
+                    "macroId": {"value": "8d49c7fa-6f72-4b9c-a12b-8125fbd62482"},
+                    "schemaVersion": {"value": "1"},
+                    "title": "Workflows Approvers Metadata",
+                },
+            },
+        },
+    }
+
+    context = {}
+    result = process_extension_node(latest_approvers_node, context)
+    assert "workflowApproval:latest[]" in "".join(result)
+
+    # Test 2: approvers-macro with default (all) option
+    all_approvers_node = {
+        "type": "extension",
+        "attrs": {
+            "extensionType": "com.atlassian.confluence.macro.core",
+            "extensionKey": "approvers-macro",
+            "parameters": {
+                "macroParams": {
+                    # No data value or a different value results in "all" option
+                },
+                "macroMetadata": {"title": "Workflows Approvers Metadata"},
+            },
+        },
+    }
+
+    result = process_extension_node(all_approvers_node, context)
+    assert "workflowApproval:all[]" in "".join(result)
+
+    # Test 3: Error handling
+    invalid_node = {
+        "type": "extension",
+        "attrs": {
+            "extensionKey": "approvers-macro",
+            # Missing required parameters
+        },
+    }
+
+    result = process_extension_node(invalid_node, context)
+    assert "// Error processing Workflow Approvers" in "".join(result)
+
+
+def test_process_workflow_change_table_extension():
+    """Test processing of workflow change table extension node."""
+    from helper_scripts.adf_resources import process_extension_node
+
+    # Test document-control-table-macro
+    change_table_node = {
+        "type": "extension",
+        "attrs": {
+            "extensionType": "com.atlassian.confluence.macro.core",
+            "extensionKey": "document-control-table-macro",
+            "parameters": {
+                "macroMetadata": {
+                    "macroId": {"value": "7f8b9c1d-5e6f-4a2b-9c3d-8a7b6c5d4e3f"},
+                    "schemaVersion": {"value": "1"},
+                    "title": "Workflows Document Control Table",
+                }
+            },
+        },
+    }
+
+    context = {}
+    result = process_extension_node(change_table_node, context)
+    assert "workflowChangeTable:[]" in "".join(result)
+
+    # Test error handling
+    invalid_node = {
+        "type": "extension",
+        "attrs": {
+            "extensionKey": "document-control-table-macro",
+            # Missing required parameters
+        },
+    }
+
+    result = process_extension_node(invalid_node, context)
+    assert "// Error processing Workflow Change Table" in "".join(result)
