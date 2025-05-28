@@ -211,23 +211,47 @@ def process_extension_node(node, context):
     if ext_key == "toc":
         result.append("\n:toc:\n")
 
-    # Handle JIRA issues table macro
-    elif ext_key == "jira-issues-table":
-        jql = (
-            node.get("attrs", {})
-            .get("parameters", {})
-            .get("macroParams", {})
-            .get("jql", {})
-            .get("value", "")
-        )
-        columns = (
-            node.get("attrs", {})
-            .get("parameters", {})
-            .get("macroParams", {})
-            .get("columns", {})
-            .get("value", "")
-        )
-        result.append(f'jiraIssuesTable::"{jql}"[fields="{columns}"]')
+    # Handle JIRA JQL Snapshot macro
+    elif ext_key == "jira-jql-snapshot":
+        try:
+            # Extract the macro parameters JSON string and parse it
+            macro_params_str = (
+                node.get("attrs", {})
+                .get("parameters", {})
+                .get("macroParams", {})
+                .get("macroParams", {})
+                .get("value", "{}")
+            )
+            
+            import json
+            macro_params = json.loads(macro_params_str)
+            
+            # Extract JQL and fields from the first level
+            if macro_params.get("levels") and len(macro_params["levels"]) > 0:
+                level = macro_params["levels"][0]
+                jql = level.get("jql", "")
+                
+                # Extract field names from fieldsPosition
+                fields = []
+                for field_obj in level.get("fieldsPosition", []):
+                    if field_obj.get("available", False) and field_obj.get("value", {}).get("id"):
+                        fields.append(field_obj["value"]["id"])
+                
+                fields_str = ",".join(fields)
+                
+                # Create the jiraIssuesTable macro
+                result.append(f'\njiraIssuesTable::["{jql}", fields="{fields_str}"]\n')
+                
+                # Optionally include the title as a section heading
+                if level.get("title"):
+                    title = level.get("title")
+                    # Insert the title before the table
+                    result.insert(0, f"\n.{title}\n")
+        except Exception as e:
+            # Log the error but continue processing
+            import logging
+            logging.warning(f"Error processing jira-jql-snapshot: {str(e)}")
+            result.append(f"\n// Error processing JIRA snapshot: {str(e)}\n")
 
     return result
 
@@ -465,16 +489,15 @@ def process_list_item_content(item_node, context, indent=""):
         else "." * context.get("list_depth", 1)
     )
 
-    level = context.get("list_depth", 1)
-
     item_lines = []
     item_context = context.copy()
-    item_context["list_item_indent"] = f"{item_marker * level} "
+    item_context["list_item_indent"] = f"{item_marker} "
 
     for content_node in item_node.get("content", []):
         # Add the list marker to the first paragraph
+        para_indent = "" if context.get("in_table_cell") else indent
+
         if content_node.get("type") == "paragraph" and not item_lines:
-            para_indent = "" if context.get("in_table_cell") else indent
             item_text = "".join(process_node(content_node, item_context)).rstrip()
             item_lines.append(f"{para_indent}{item_marker} {item_text}")
         elif content_node.get("type") in ["bulletList", "orderedList"]:

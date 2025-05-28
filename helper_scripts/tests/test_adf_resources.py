@@ -715,3 +715,136 @@ def test_table_with_asciidoc_list_in_cell():
 
     # Assert the output matches the expected result
     assert output == expected_output
+
+
+def test_process_list_item_content():
+    """Test processing list item content with various configurations."""
+    from helper_scripts.adf_resources import process_list_item_content
+
+    # Test case 1: Simple bullet list item
+    simple_item = {
+        "type": "listItem",
+        "content": [
+            {
+                "type": "paragraph",
+                "content": [
+                    {"type": "text", "text": "Simple item"}
+                ]
+            }
+        ]
+    }
+    context = {"list_depth": 1, "in_bullet_list": True}
+    result = process_list_item_content(simple_item, context)
+    assert result == ["* Simple item"]
+    
+    # Test case 2: List item with multiple paragraphs
+    multi_para_item = {
+        "type": "listItem",
+        "content": [
+            {
+                "type": "paragraph",
+                "content": [
+                    {"type": "text", "text": "First paragraph"}
+                ]
+            },
+            {
+                "type": "paragraph",
+                "content": [
+                    {"type": "text", "text": "Second paragraph"}
+                ]
+            }
+        ]
+    }
+    result = process_list_item_content(multi_para_item, context)
+    assert result == ["* First paragraph", "  Second paragraph"]
+    
+    # Test case 3: Ordered list item
+    ordered_item = {
+        "type": "listItem",
+        "content": [
+            {
+                "type": "paragraph",
+                "content": [
+                    {"type": "text", "text": "Ordered item"}
+                ]
+            }
+        ]
+    }
+    ordered_context = {"list_depth": 1, "in_bullet_list": False}
+    result = process_list_item_content(ordered_item, ordered_context)
+    assert result == [". Ordered item"]
+    
+    # Test case 4: Nested list
+    nested_list_item = {
+        "type": "listItem",
+        "content": [
+            {
+                "type": "paragraph",
+                "content": [
+                    {"type": "text", "text": "Parent item"}
+                ]
+            },
+            {
+                "type": "bulletList",
+                "content": [
+                    {
+                        "type": "listItem",
+                        "content": [
+                            {
+                                "type": "paragraph",
+                                "content": [
+                                    {"type": "text", "text": "Child item"}
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+    result = process_list_item_content(nested_list_item, context)
+    assert len(result) == 2
+    assert result[0] == "* Parent item"
+    assert "* Child item" in result[1]
+
+
+def test_process_jira_snapshot_extension():
+    """Test processing a JIRA JQL snapshot extension node."""
+    node = {
+        "type": "extension",
+        "attrs": {
+            "layout": "full-width",
+            "extensionType": "com.atlassian.confluence.macro.core",
+            "extensionKey": "jira-jql-snapshot",
+            "parameters": {
+                "macroParams": {
+                    "macroPageVersion": {
+                        "value": "{\"version\":1745422974377,\"macroId\":\"1f035986-cdff-4a26-b71e-35bdb1662216\"}"
+                    },
+                    "macroId": {
+                        "value": "1f035986-cdff-4a26-b71e-35bdb1662216"
+                    },
+                    "macroParams": {
+                        "value": "{\"levels\":[{\"id\":\"c2f4cc93-8ea4-48f2-b778-10f71091cff4\",\"title\":\"Architecture requirements for Example Product\",\"jql\":\"project = prq and issuetype = \\\"software/system requirement\\\" AND \\\"Product[Select List (multiple choices)]\\\" = \\\"Example Product\\\"\",\"fieldsPosition\":[{\"value\":{\"id\":\"key\",\"key\":\"key\"},\"label\":\"Key\",\"available\":true},{\"value\":{\"id\":\"summary\",\"key\":\"summary\"},\"label\":\"Summary\",\"available\":true},{\"label\":\"Description\",\"value\":{\"id\":\"description\",\"key\":\"description\"},\"available\":true}],\"fieldsOptions\":{\"groupedFields\":[],\"sortedFields\":[]},\"levelType\":\"JIRA_ISSUES\"}],\"macroId\":\"1f035986-cdff-4a26-b71e-35bdb1662216\"}"
+                    }
+                }
+            }
+        }
+    }
+    
+    context = {}
+    from helper_scripts.adf_resources import process_extension_node
+    result = process_extension_node(node, context)
+    
+    # Check that the result contains a jiraIssuesTable macro
+    result_text = "".join(result)
+    assert "jiraIssuesTable::" in result_text
+    
+    # Check that the JQL query is included
+    assert "project = prq and issuetype" in result_text
+    
+    # Check that the fields are included
+    assert "fields=\"key,summary,description\"" in result_text
+    
+    # Check that the title is included
+    assert ".Architecture requirements for Example Product" in result_text
