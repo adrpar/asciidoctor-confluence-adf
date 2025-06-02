@@ -673,3 +673,86 @@ def test_get_jira_ticket_title_failure(client):
 
         # Verify None is returned on failure
         assert title is None
+
+
+def test_get_page_attachments_pagination(client):
+    """Test that get_page_attachments handles pagination correctly."""
+    with patch.object(client, "_make_request") as mock_make_request:
+        # Create mock responses for two pages of results
+        mock_make_request.side_effect = [
+            # First page
+            {
+                "results": [{"id": "att1", "title": "image1.png"}],
+                "_links": {"next": "/next-page"},
+                "size": 1,
+            },
+            # Second page
+            {
+                "results": [{"id": "att2", "title": "image2.png"}],
+                "_links": {},  # No next link indicates last page
+                "size": 1,
+            },
+        ]
+
+        attachments = client.get_page_attachments("12345")
+
+        # Verify we got both pages of results combined
+        assert len(attachments) == 2
+        assert attachments[0]["id"] == "att1"
+        assert attachments[1]["id"] == "att2"
+
+        # Verify the API was called twice with different start parameters
+        assert mock_make_request.call_count == 2
+
+        # Check that the URL path is correct
+        first_call_url = mock_make_request.call_args_list[0][0][0]
+        assert first_call_url == "/wiki/rest/api/content/12345/child/attachment"
+
+        # Check that the parameters were passed correctly
+        first_call_params = mock_make_request.call_args_list[0][1]["params"]
+        second_call_params = mock_make_request.call_args_list[1][1]["params"]
+
+        assert first_call_params["start"] == 0
+        assert second_call_params["start"] == 50
+        assert "expand" in first_call_params
+
+
+def test_get_child_pages_pagination(client):
+    """Test that get_child_pages handles pagination correctly."""
+    with patch.object(client, "_make_request") as mock_make_request:
+        # Create mock responses for two pages of results
+        mock_make_request.side_effect = [
+            # First page
+            {
+                "results": [{"id": "page1", "title": "Child Page 1"}],
+                "_links": {"next": "/next-page"},
+                "size": 1,
+            },
+            # Second page
+            {
+                "results": [{"id": "page2", "title": "Child Page 2"}],
+                "_links": {},  # No next link indicates last page
+                "size": 1,
+            },
+        ]
+
+        child_pages = client.get_child_pages("12345")
+
+        # Verify we got both pages of results combined
+        assert len(child_pages) == 2
+        assert child_pages[0]["id"] == "page1"
+        assert child_pages[1]["id"] == "page2"
+
+        # Verify the API was called twice with different start parameters
+        assert mock_make_request.call_count == 2
+
+        # Check that the URL path is correct
+        first_call_url = mock_make_request.call_args_list[0][0][0]
+        assert first_call_url == "/wiki/rest/api/content/12345/child/page"
+
+        # Check that the parameters were passed correctly
+        first_call_params = mock_make_request.call_args_list[0][1]["params"]
+        second_call_params = mock_make_request.call_args_list[1][1]["params"]
+
+        assert first_call_params["start"] == 0
+        assert second_call_params["start"] == 50

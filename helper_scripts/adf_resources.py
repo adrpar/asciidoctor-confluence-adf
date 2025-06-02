@@ -23,10 +23,9 @@ def process_media_node(node, context):
     media_id = node.get("attrs", {}).get("id", "")
     alt_text = node.get("attrs", {}).get("alt", "")
 
-    # Look up the file name using the file_id_to_filename mapping
     file_id_to_filename = context.get("file_id_to_filename", {})
 
-    image_filename = file_id_to_filename.get(media_id, "")  # Try to get from mapping
+    image_filename = file_id_to_filename.get(media_id, "")
 
     # If not found in mapping, try media_files as fallback
     if not image_filename and context.get("media_files"):
@@ -41,7 +40,6 @@ def process_media_node(node, context):
     elif "." not in image_filename:
         image_filename = f"{image_filename}.png"
 
-    # Format as a single string to match test expectations
     if alt_text:
         return [f".{alt_text}\nimage::{image_filename}[]\n"]
     else:
@@ -50,7 +48,6 @@ def process_media_node(node, context):
 
 def process_media_single_node(node, context):
     """Process a mediaSingle node and convert to AsciiDoc image."""
-    # Get the media node
     media_nodes = [
         child for child in node.get("content", []) if child.get("type") == "media"
     ]
@@ -73,7 +70,6 @@ def process_heading_node(node, context):
 
 def process_paragraph_node(node, context, indent=""):
     """Process a paragraph node and convert to AsciiDoc paragraph."""
-    # Special handling for paragraphs with mixed content (text and inline extensions)
     if node.get("content"):
         additional_processing_needs = ["inlineExtension", "mention", "inlineCard"]
         has_additional_processing_need = any(
@@ -82,20 +78,16 @@ def process_paragraph_node(node, context, indent=""):
         )
 
         if has_additional_processing_need:
-            # Process each child node individually and combine
             parts = []
             for child in node.get("content", []):
                 if child.get("type") in additional_processing_needs:
-                    # Process inline extension nodes directly
                     extension_result = process_node(child, context)
                     parts.extend(extension_result)
                 else:
-                    # Process other nodes normally
                     parts.append(get_node_text_content(child, context))
 
             return [f"{indent}{''.join(parts)}\n"]
 
-    # Standard handling for simple paragraphs
     paragraph_text = get_node_text_content(node, context)
     if paragraph_text.strip():
         return [f"{indent}{paragraph_text}\n"]
@@ -136,7 +128,6 @@ def process_table_cell_node(node, context):
     cell_context = context.copy()
     cell_context["in_table_cell"] = True
 
-    # Process cell content
     cell_lines = []
     has_complex_content = False
 
@@ -154,19 +145,16 @@ def process_table_cell_node(node, context):
             has_complex_content = True
             # Add an extra newline if we just processed a paragraph
             if had_paragraph and cell_lines:
-                cell_lines.append("")  # Empty string will create a newline when joined
+                cell_lines.append("")
 
         content_result = "".join(process_node(content_node, cell_context)).strip()
         if content_result:
             cell_lines.append(content_result)
 
-        # Track if this was a paragraph for next node
         had_paragraph = content_node.get("type") == "paragraph"
 
-    # Join all lines in the cell
     cell_text = "\n".join(cell_lines)
 
-    # For non-complex cells, escape pipe characters
     if not has_complex_content:
         cell_text = cell_text.replace("|", "\\|")
         # Remove the double escaping that might happen with links
@@ -179,29 +167,22 @@ def process_list_node(node, context, indent=""):
     """Process a list node (bulletList or orderedList) and convert to AsciiDoc list."""
     result = []
 
-    # Determine list type and marker
     is_bullet = node.get("type") == "bulletList"
     marker = "*" if is_bullet else "."
 
-    # Track list depth
     context["list_depth"] = context.get("list_depth", 0) + 1
     context["in_bullet_list"] = is_bullet
 
-    # Process each list item
     for item_node in node.get("content", []):
         if item_node.get("type") == "listItem":
-            # Process the list item content using the extracted method
             item_lines = process_list_item_content(item_node, context, indent)
 
-            # Add the list item to the result
             result.append("\n".join(item_lines))
 
-    # Reset list depth
     context["list_depth"] -= 1
     if context["list_depth"] == 0:
         context.pop("in_bullet_list", None)
 
-    # Join list items with newlines
     joined_result = "\n".join(result)
 
     # In table cells, we don't add extra newlines to preserve table formatting
@@ -218,7 +199,6 @@ def process_code_block_node(node, context):
     result.append(f"\n[source,{language}]")
     result.append("\n----")
 
-    # Extract code content
     code_content = ""
     for content_node in node.get("content", []):
         if content_node.get("type") == "text":
@@ -235,14 +215,11 @@ def process_extension_node(node, context):
     result = []
     ext_key = node.get("attrs", {}).get("extensionKey", "")
 
-    # Handle TOC macro
     if ext_key == "toc":
         result.append("\n:toc:\n")
 
-    # Handle JIRA JQL Snapshot macro
     elif ext_key == "jira-jql-snapshot":
         try:
-            # Extract the macro parameters JSON string and parse it
             macro_params_str = (
                 node.get("attrs", {})
                 .get("parameters", {})
@@ -253,7 +230,6 @@ def process_extension_node(node, context):
 
             macro_params = json.loads(macro_params_str)
 
-            # Extract JQL and fields from the first level
             if macro_params.get("levels") and len(macro_params["levels"]) > 0:
                 level = macro_params["levels"][0]
                 jql = level.get("jql", "")
@@ -268,10 +244,8 @@ def process_extension_node(node, context):
 
                 fields_str = ",".join(fields)
 
-                # Extract the title if present
                 title = level.get("title", "")
 
-                # Create the jiraIssuesTable macro with the title as an attribute
                 if title:
                     result.append(
                         f'\njiraIssuesTable::[\'{jql}\', fields="{fields_str}", title="{title}"]\n'
@@ -281,20 +255,16 @@ def process_extension_node(node, context):
                         f"\njiraIssuesTable::['{jql}', fields=\"{fields_str}\"]\n"
                     )
         except Exception as e:
-            # Log the error but continue processing
             import logging
 
             logging.warning(f"Error processing jira-jql-snapshot: {str(e)}")
             result.append(f"\n// Error processing JIRA snapshot: {str(e)}\n")
 
-    # Handle Workflow Approvers macro
     elif ext_key == "approvers-macro":
         try:
-            # Verify required structure exists
             if "parameters" not in node.get("attrs", {}):
                 raise ValueError("Missing required parameters structure")
 
-            # Extract the data value parameter to determine the option
             data_value = (
                 node.get("attrs", {})
                 .get("parameters", {})
@@ -303,14 +273,12 @@ def process_extension_node(node, context):
                 .get("value", "")
             )
 
-            # Map the data value to the AsciiDoc option
             option = (
                 "latest"
                 if data_value == "Latest Approvals for Current Workflow"
                 else "all"
             )
 
-            # Create the workflowApproval macro
             result.append(f"\nworkflowApproval:{option}[]\n")
         except Exception as e:
             import logging
@@ -318,14 +286,11 @@ def process_extension_node(node, context):
             logging.warning(f"Error processing approvers-macro: {str(e)}")
             result.append(f"\n// Error processing Workflow Approvers: {str(e)}\n")
 
-    # Handle Workflow Change Table macro
     elif ext_key == "document-control-table-macro":
         try:
-            # Verify required structure exists
             if "parameters" not in node.get("attrs", {}):
                 raise ValueError("Missing required parameters structure")
 
-            # The document-control-table-macro doesn't have options in the Ruby extension
             result.append("\nworkflowChangeTable:[]\n")
         except Exception as e:
             import logging
@@ -342,19 +307,15 @@ def process_inline_extension_node(node, context):
     ext_key = node.get("attrs", {}).get("extensionKey", "")
 
     if ext_key == "anchor":
-        # Extract anchor ID from parameters
         macro_params = (
             node.get("attrs", {}).get("parameters", {}).get("macroParams", {})
         )
         # The anchor ID is in the unnamed parameter (empty string key)
         anchor_id = macro_params.get("", {}).get("value", "")
         if anchor_id:
-            # Add the anchor ID to the context for potential later reference
             context.setdefault("anchors", {})[anchor_id] = True
-            # Format as AsciiDoc anchor
             result.append(f"[[{anchor_id}]]")
     elif ext_key == "metadata-macro":
-        # Extract data value from macro parameters
         macro_params = (
             node.get("attrs", {}).get("parameters", {}).get("macroParams", {})
         )
@@ -372,12 +333,10 @@ def process_inline_extension_node(node, context):
             "Workflow Status": "status",
         }
 
-        # Lookup the target keyword for the data value
         target = WORKFLOW_METADATA_KEYWORDS_REVERSE.get(data_value)
         if target:
             result.append(f"appfoxWorkflowMetadata:{target}[]")
         else:
-            # If we don't recognize the data value, just use it as-is
             result.append(f"// Unknown workflow metadata: {data_value}")
 
     return result
@@ -426,10 +385,8 @@ def get_node_text_content(node, context):
                         text = f"xref:{rel_path}#{anchor_id}[{text}]"
                         continue
                     else:
-                        # Fall back to a regular link if the page mapping doesn't have the expected structure
                         link_href = href
 
-                # Check if this is a JIRA link
                 jira_base_url = os.environ.get(
                     "JIRA_BASE_URL", "https://jira.example.com"
                 )
@@ -483,7 +440,6 @@ def process_text_node(node, context):
     text = node.get("text", "")
     marks = node.get("marks", [])
 
-    # Apply marks to text
     for mark in marks:
         mark_type = mark.get("type", "")
 
@@ -509,11 +465,9 @@ def process_text_node(node, context):
                     target_path = context.get("page_mapping")[page_id]["path"]
                     rel_path = os.path.relpath(target_path, current_dir)
 
-                    # Create AsciiDoc xref
                     text = f"xref:{rel_path}[{text}]"
                     continue
 
-            # Regular external link
             text = f"link:{url}[{text}]"
 
     return text
@@ -521,7 +475,6 @@ def process_text_node(node, context):
 
 def process_node(node, context, indent=""):
     """Process a single ADF node and convert it to AsciiDoc."""
-    # Skip node if it's marked to be skipped
     if context.get("next_node_to_skip") == node:
         context.pop("next_node_to_skip")
         return []
@@ -532,7 +485,6 @@ def process_node(node, context, indent=""):
 
     node_type = node.get("type")
 
-    # Delegate to specific node type processing functions
     if node_type == "mediaSingle":
         return process_media_single_node(node, context)
     elif node_type == "heading":
@@ -596,7 +548,6 @@ def update_adf_media_ids(adf_json, filename_to_fileid):
         if not isinstance(node, dict):
             return
 
-        # Check for media nodes
         if (
             node.get("type") in ["media", "mediaInline"]
             and node.get("attrs", {}).get("collection") == "attachments"
@@ -715,19 +666,29 @@ def process_mention_node(node, context):
     user_id = mention_attrs.get("id", "")
     mention_text = mention_attrs.get("text", "")
 
-    # Extract the username from the mention text (remove @ prefix)
     if mention_text.startswith("@"):
         username = mention_text[1:]
     else:
         username = mention_text
 
-    # Convert spaces to underscores for the macro format
     macro_username = username.replace(" ", "_")
 
-    # Store mapping of usernames to IDs in context for potential reverse conversion
     context.setdefault("mention_username_to_id", {})[macro_username] = user_id
 
     return [f"atlasMention:{macro_username}[]"]
+
+
+def extract_title_from_url(url, context):
+    """Extract the title of the referring Confluence page or Jira ticket."""
+    client = context.get("confluence_client")
+    if not client:
+        return None
+
+    if "atlassian.net/wiki" in url:
+        return client.get_confluence_page_title(url)
+    elif "atlassian.net/browse" in url:
+        return client.get_jira_ticket_title(url)
+    return None
 
 
 def process_inline_card_node(node, context):
@@ -736,108 +697,18 @@ def process_inline_card_node(node, context):
     if not url:
         return []
 
-    # Use the ConfluenceClient to fetch the title
     client = context.get("confluence_client")
-
     if not client:
         return [f"link:{url}[{url}]"]
 
-    title = None
-    if "atlassian.net/wiki" in url:
-        # Fetch Confluence page title
-        title = client.get_confluence_page_title(url)
-    elif "atlassian.net/browse" in url:
-        # Fetch Jira ticket title
-        title = client.get_jira_ticket_title(url)
-
-    # Use the title as the link text if available, otherwise use the URL
+    title = extract_title_from_url(url, context)
     link_text = title if title else url
     return [f"link:{url}[{link_text}]"]
 
 
-def extract_title_from_url(url, context):
-    """Extract the title of the referring Confluence page or Jira ticket."""
-    if "atlassian.net/wiki" in url:
-        # Handle Confluence page
-        return fetch_confluence_page_title(url, context)
-    elif "atlassian.net/browse" in url:
-        # Handle Jira ticket
-        return fetch_jira_ticket_title(url, context)
-    return None
-
-
-def fetch_confluence_page_title(url, context):
-    """Fetch the title of a Confluence page using its URL."""
-    base_url = context.get("confluence_base_url", os.environ.get("CONFLUENCE_BASE_URL"))
-    api_token = os.environ.get("CONFLUENCE_API_TOKEN")
-    user_email = os.environ.get("CONFLUENCE_USER_EMAIL")
-
-    if not base_url or not api_token or not user_email:
-        return None
-
-    # Extract the page ID from the URL
-    page_id = extract_page_id_from_url(url, base_url)
-    if not page_id:
-        return None
-
-    # Query the Confluence API for the page title
-    api_url = f"{base_url}/rest/api/content/{page_id}?expand=title"
-    headers = {
-        "Authorization": f"Basic {base64.b64encode(f'{user_email}:{api_token}'.encode()).decode()}",
-        "Content-Type": "application/json",
-    }
-
-    try:
-        response = requests.get(api_url, headers=headers)
-        if response.status_code == 200:
-            data = response.json()
-            return data.get("title")
-    except Exception as e:
-        import logging
-
-        logging.warning(f"Failed to fetch Confluence page title: {e}")
-
-    return None
-
-
-def fetch_jira_ticket_title(url, context):
-    """Fetch the title of a Jira ticket using its URL."""
-    base_url = context.get("jira_base_url", os.environ.get("JIRA_BASE_URL"))
-    api_token = os.environ.get("JIRA_API_TOKEN")
-    user_email = os.environ.get("JIRA_USER_EMAIL")
-
-    if not base_url or not api_token or not user_email:
-        return None
-
-    # Extract the issue key from the URL
-    match = re.search(r"/browse/([A-Z]+-\d+)", url)
-    if not match:
-        return None
-    issue_key = match.group(1)
-
-    # Query the Jira API for the issue title
-    api_url = f"{base_url}/rest/api/2/issue/{issue_key}"
-    headers = {
-        "Authorization": f"Basic {base64.b64encode(f'{user_email}:{api_token}'.encode()).decode()}",
-        "Content-Type": "application/json",
-    }
-
-    try:
-        response = requests.get(api_url, headers=headers)
-        if response.status_code == 200:
-            data = response.json()
-            return data.get("fields", {}).get("summary")
-    except Exception as e:
-        import logging
-
-        logging.warning(f"Failed to fetch Jira ticket title: {e}")
-
-    return None
-
-
 def process_task_list_node(node, context, indent=""):
     """Process a taskList node and convert it to a bulleted AsciiDoc list."""
-    result = ["\n"]  # Add a newline before the list starts
+    result = ["\n"]
 
     for task_item in node.get("content", []):
         if task_item.get("type") == "taskItem":
@@ -851,8 +722,6 @@ def process_task_item_node(node, context, indent=""):
     state = node.get("attrs", {}).get("state", "TODO")
     checkbox = "[x]" if state == "DONE" else "[ ]"
 
-    # Extract the task text
     task_text = get_node_text_content(node, context)
 
-    # Format the task item as a bulleted list
     return [f"{indent}* {checkbox} {task_text}\n"]

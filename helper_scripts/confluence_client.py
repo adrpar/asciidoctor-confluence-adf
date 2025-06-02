@@ -62,32 +62,26 @@ class ConfluenceClient:
             },
         }
 
-        response = requests.post(
-            url,
-            headers=self._auth_headers(content_type="application/json"),
-            data=json.dumps(data),
+        response = self._make_request(
+            url, method="POST", data=json.dumps(data), content_type="application/json"
         )
 
-        if response.status_code in (200, 201):
+        if response:
             print("Empty page created.")
-            return response.json()["id"]
+            return response["id"]
         else:
-            print(
-                f"Failed to create empty page: {response.status_code} - {response.text}"
-            )
+            print("Failed to create empty page")
             return None
 
     def get_page_info(self, page_id):
         """Fetch current page information."""
         url = urljoin(self.base_url, f"/wiki/api/v2/pages/{page_id}")
-        response = requests.get(url, headers=self._auth_headers())
+        response = self._make_request(url)
 
-        if response.status_code == 200:
-            return response.json()
+        if response:
+            return response
         else:
-            print(
-                f"Failed to fetch page info: {response.status_code} - {response.text}"
-            )
+            print(f"Failed to fetch page info for page ID: {page_id}")
             return None
 
     def get_page_content(self, page_id):
@@ -95,10 +89,10 @@ class ConfluenceClient:
         url = urljoin(self.base_url, f"/wiki/api/v2/pages/{page_id}")
         params = {"body-format": "atlas_doc_format"}
 
-        response = requests.get(url, headers=self._auth_headers(), params=params)
+        response = self._make_request(url, params=params)
 
-        if response.status_code == 200:
-            data = response.json()
+        if response:
+            data = response
             body_content = data.get("body", {})
 
             # Check if the content is nested in atlas_doc_format
@@ -109,9 +103,7 @@ class ConfluenceClient:
 
             return body_content
         else:
-            print(
-                f"Error retrieving page content: {response.status_code} - {response.text}"
-            )
+            print(f"Error retrieving page content for page ID: {page_id}")
             return None
 
     def update_page_content(self, page_id, adf_json):
@@ -134,50 +126,40 @@ class ConfluenceClient:
         }
 
         url = urljoin(self.base_url, f"/wiki/api/v2/pages/{page_id}")
-        response = requests.put(
-            url,
-            headers=self._auth_headers(content_type="application/json"),
-            data=json.dumps(data),
+        response = self._make_request(
+            url, method="PUT", data=json.dumps(data), content_type="application/json"
         )
 
-        if response.status_code in (200, 201):
+        if response:
             print("Page content updated.")
             return True
         else:
-            print(
-                f"Failed to update page content: {response.status_code} - {response.text}"
-            )
+            print("Failed to update page content")
             return False
 
     def get_page_attachments(self, page_id):
-        """Get all attachments for a page."""
-        url = urljoin(
-            self.base_url,
-            f"/wiki/rest/api/content/{page_id}/child/attachment?expand=extensions",
+        """Get all attachments for a page with pagination support."""
+        url_template = "/wiki/rest/api/content/{page_id}/child/attachment"
+        path_params = {"page_id": page_id}
+        query_params = {"expand": "extensions"}
+
+        return self._paginate(
+            url_template=url_template,
+            path_params=path_params,
+            query_params=query_params,
+            limit=50,
         )
-
-        response = requests.get(url, headers=self._auth_headers())
-
-        if response.status_code == 200:
-            return response.json().get("results", [])
-        else:
-            print(
-                f"Failed to fetch attachments: {response.status_code} - {response.text}"
-            )
-            return []
 
     def delete_attachment(self, attachment_id):
         """Delete an attachment by its ID."""
         delete_url = urljoin(self.base_url, f"/wiki/rest/api/content/{attachment_id}")
-        response = requests.delete(delete_url, headers=self._auth_headers())
+        response = self._make_request(delete_url, method="DELETE")
 
-        if response.status_code in (200, 204):
+        if response:
             print(f"Deleted attachment (id: {attachment_id})")
             return True
         else:
-            print(
-                f"Failed to delete attachment (id: {attachment_id}): {response.status_code} - {response.text}"
-            )
+            print(f"Failed to delete attachment (id: {attachment_id})")
             return False
 
     def _get_attachment_download_url(self, attachment):
@@ -205,16 +187,14 @@ class ConfluenceClient:
     def _calculate_remote_sha256(self, url):
         """Calculate SHA256 checksum of a remote file."""
         sha256 = hashlib.sha256()
-        response = requests.get(url, headers=self._auth_headers(), stream=True)
+        response = self._make_request(url, stream=True)
 
-        if response.status_code == 200:
+        if response:
             for chunk in response.iter_content(8192):
                 sha256.update(chunk)
             return sha256.hexdigest()
         else:
-            print(
-                f"Failed to download attachment for checksum: {response.status_code} - {response.text}"
-            )
+            print(f"Failed to download attachment for checksum from URL: {url}")
             return None
 
     def upload_images_to_confluence(self, images, page_id, current_files=None):
@@ -416,36 +396,76 @@ class ConfluenceClient:
         return media_files, file_id_to_filename  # Always return both values
 
     def get_child_pages(self, page_id):
-        """Get direct child pages of a Confluence page."""
-        url = f"{self.base_url}/wiki/rest/api/content/{page_id}/child/page"
-        response = requests.get(url, headers=self._auth_headers())
+        """Get all direct child pages of a Confluence page with pagination support."""
+        url_template = "/wiki/rest/api/content/{page_id}/child/page"
+        path_params = {"page_id": page_id}
 
-        if response.status_code == 200:
-            data = response.json()
-            return data.get("results", [])
-        else:
-            print(
-                f"Failed to fetch child pages: {response.status_code} - {response.text}"
-            )
-            return []
+        return self._paginate(
+            url_template=url_template, path_params=path_params, limit=50
+        )
 
-    def _make_request(self, url, method="GET", data=None):
-        """Make a request to the Confluence API with authentication."""
-        headers = self._auth_headers()
+    def _make_request(
+        self,
+        url,
+        method="GET",
+        data=None,
+        params=None,
+        files=None,
+        content_type=None,
+        stream=False,
+        atlassian_token=None,
+    ):
+        """Make a request to the Confluence API with authentication.
+
+        Args:
+            url (str): The URL to make the request to
+            method (str): HTTP method (GET, POST, PUT, DELETE)
+            data (dict/str): JSON data or string data for the request body
+            params (dict): Query parameters
+            files (dict): Files to upload
+            content_type (str): Content type header
+            stream (bool): Whether to stream the response
+            atlassian_token (str): Value for X-Atlassian-Token header
+
+        Returns:
+            dict/bytes/None: Response data or None if request failed
+        """
+        headers = self._auth_headers(
+            content_type=content_type, atlassian_token=atlassian_token
+        )
 
         try:
             if method == "GET":
-                response = requests.get(url, headers=headers)
+                response = requests.get(
+                    url, headers=headers, params=params, stream=stream
+                )
             elif method == "POST":
-                response = requests.post(url, headers=headers, json=data)
+                if files:
+                    response = requests.post(
+                        url, headers=headers, params=params, files=files
+                    )
+                else:
+                    response = requests.post(
+                        url, headers=headers, params=params, data=data
+                    )
             elif method == "PUT":
-                response = requests.put(url, headers=headers, json=data)
+                response = requests.put(url, headers=headers, params=params, data=data)
+            elif method == "DELETE":
+                response = requests.delete(url, headers=headers, params=params)
             else:
                 print(f"Unsupported method: {method}")
                 return None
 
-            if response.status_code == 200:
-                return response.json()
+            if response.status_code in (200, 201, 204):
+                if stream:
+                    return response
+                elif response.content:
+                    try:
+                        return response.json()
+                    except ValueError:
+                        return response.content
+                else:
+                    return True
             else:
                 print(f"Request failed: {url} ({response.status_code})")
                 print(f"Response: {response.text[:200]}...")
@@ -527,6 +547,46 @@ class ConfluenceClient:
         if match:
             return match.group(1)
         return None
+
+    def _paginate(self, url_template, path_params=None, query_params=None, limit=50):
+        """Generic pagination method for Confluence API endpoints.
+
+        Args:
+            url_template (str): URL template with {path_param} placeholders
+            path_params (dict): Parameters to substitute in the URL path
+            query_params (dict): Additional query parameters
+            limit (int): Number of items per page
+
+        Returns:
+            list: Combined results from all pages
+        """
+        all_results = []
+        start = 0
+        path_params = path_params or {}
+        query_params = query_params or {}
+
+        while True:
+            # Build URL with path parameters
+            url_with_path = url_template.format(**path_params)
+
+            # Add pagination and other query parameters
+            current_params = {"start": start, "limit": limit, **query_params}
+
+            response = self._make_request(url_with_path, params=current_params)
+
+            if not response:
+                break
+
+            results = response.get("results", [])
+            all_results.extend(results)
+
+            # Check if there are more pages based on _links.next
+            if "next" not in response.get("_links", {}):
+                break
+
+            start += limit
+
+        return all_results
 
 
 def sanitize_filename(filename):
