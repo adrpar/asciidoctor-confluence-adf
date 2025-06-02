@@ -1083,3 +1083,70 @@ def test_process_workflow_change_table_extension():
 
     result = process_extension_node(invalid_node, context)
     assert "// Error processing Workflow Change Table" in "".join(result)
+
+
+def test_process_mention_node():
+    """Test processing of ADF mention nodes to AtlasMention macros."""
+    from helper_scripts.adf_resources import process_mention_node
+
+    # Test 1: Basic mention with user ID and name
+    basic_mention = {
+        "type": "mention",
+        "attrs": {
+            "id": "fake-user-id-111",
+            "text": "John Doe",
+        }
+    }
+    context = {}
+    result = process_mention_node(basic_mention, context)
+    assert result == ["atlasMention:John_Doe[]"]
+    assert "John_Doe" in context.get("mention_username_to_id", {})
+    assert context["mention_username_to_id"]["John_Doe"] == "fake-user-id-111"
+
+    # Test 2: Mention with @ prefix
+    at_prefix_mention = {
+        "type": "mention",
+        "attrs": {
+            "id": "fake-user-id-222",
+            "text": "@Jane Doe"
+        }
+    }
+    context = {}
+    result = process_mention_node(at_prefix_mention, context)
+    assert result == ["atlasMention:Jane_Doe[]"]
+    
+    # Test 3: Mention with no spaces in name
+    no_space_mention = {
+        "type": "mention",
+        "attrs": {
+            "id": "fake-user-id-333",
+            "text": "@JohnDoe"
+        }
+    }
+    context = {}
+    result = process_mention_node(no_space_mention, context)
+    assert result == ["atlasMention:JohnDoe[]"]
+    
+    # Test 4: Integration with process_node
+    from helper_scripts.adf_resources import process_node
+    
+    paragraph_with_mention = {
+        "type": "paragraph",
+        "content": [
+            {
+                "type": "mention",
+                "attrs": {
+                    "id": "fake-user-id-111",
+                    "text": "@John Doe"
+                }
+            },
+            {
+                "type": "text",
+                "text": " please review this document."
+            }
+        ]
+    }
+    
+    context = {}
+    result = "".join(process_node(paragraph_with_mention, context))
+    assert "atlasMention:John_Doe[] please review this document." in result

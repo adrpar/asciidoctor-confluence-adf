@@ -71,18 +71,19 @@ def process_paragraph_node(node, context, indent=""):
     """Process a paragraph node and convert to AsciiDoc paragraph."""
     # Special handling for paragraphs with mixed content (text and inline extensions)
     if node.get("content"):
-        has_inline_extension = any(
-            child.get("type") == "inlineExtension" 
+        additional_processing_needs = ["inlineExtension", "mention"]
+        has_additional_processing_need = any(
+            child.get("type") in additional_processing_needs
             for child in node.get("content", [])
         )
         
-        if has_inline_extension:
+        if has_additional_processing_need:
             # Process each child node individually and combine
             parts = []
             for child in node.get("content", []):
-                if child.get("type") == "inlineExtension":
+                if child.get("type") in additional_processing_needs:
                     # Process inline extension nodes directly
-                    extension_result = process_inline_extension_node(child, context)
+                    extension_result = process_node(child, context)
                     parts.extend(extension_result)
                 else:
                     # Process other nodes normally
@@ -531,6 +532,8 @@ def process_node(node, context, indent=""):
         return process_extension_node(node, context)
     elif node_type == "inlineExtension":
         return process_inline_extension_node(node, context)
+    elif node_type == "mention":
+        return process_mention_node(node, context)
     elif node_type == "text":
         # Handle direct text nodes
         return [process_text_node(node, context)]
@@ -674,3 +677,25 @@ def extract_page_id_from_url(url, base_url=None):
         return match.group(1)
     
     return None
+
+
+def process_mention_node(node, context):
+    """Process an ADF mention node and convert to AsciiDoc AtlasMention macro."""
+    print("Processing mention node:", node)
+    mention_attrs = node.get("attrs", {})
+    user_id = mention_attrs.get("id", "")
+    mention_text = mention_attrs.get("text", "")
+    
+    # Extract the username from the mention text (remove @ prefix)
+    if mention_text.startswith("@"):
+        username = mention_text[1:]
+    else:
+        username = mention_text
+    
+    # Convert spaces to underscores for the macro format
+    macro_username = username.replace(" ", "_")
+    
+    # Store mapping of usernames to IDs in context for potential reverse conversion
+    context.setdefault("mention_username_to_id", {})[macro_username] = user_id
+    
+    return [f"atlasMention:{macro_username}[]"]

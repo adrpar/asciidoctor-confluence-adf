@@ -484,3 +484,66 @@ class JiraMacroTest < Minitest::Test
   end
 end
 
+def test_atlas_mention_macro_with_adf_output
+  setup_jira_env
+
+  # Mock the ConfluenceJiraClient to return a user
+  mock_client = Minitest::Mock.new
+  mock_client.expect(:find_user_by_fullname, { "id" => "12345", "displayName" => "John Doe" }, ["John Doe"])
+  ConfluenceJiraClient.stub :new, mock_client do
+    adoc_content = 'atlasMention:John_Doe[]'
+    doc = Asciidoctor.load(adoc_content, safe: :safe, backend: 'adf', extensions: proc { inline_macro AtlasMentionInlineMacro })
+    adf_json = doc.converter.convert(doc, 'document')
+
+    # Parse the ADF output
+    adf_data = JSON.parse(adf_json)
+
+    # Verify the mention node
+    mention_node = adf_data["content"].find { |node| node["type"] == "mention" }
+    assert mention_node, "Should contain a mention node"
+    assert_equal "12345", mention_node["attrs"]["id"]
+    assert_equal "@John Doe", mention_node["attrs"]["text"]
+  end
+end
+
+def test_atlas_mention_macro_with_html_output
+  setup_jira_env
+
+  # Mock the ConfluenceJiraClient to return a user
+  mock_client = Minitest::Mock.new
+  mock_client.expect(:find_user_by_fullname, { "id" => "12345", "displayName" => "John Doe" }, ["John Doe"])
+  ConfluenceJiraClient.stub :new, mock_client do
+    adoc_content = 'atlasMention:John_Doe[]'
+    html = Asciidoctor.convert(adoc_content, safe: :safe, backend: 'html5', extensions: proc { inline_macro AtlasMentionInlineMacro })
+
+    # Verify the HTML output
+    assert_includes html, "@John Doe"
+  end
+end
+
+def test_atlas_mention_macro_missing_credentials
+  ENV.delete('CONFLUENCE_BASE_URL')
+  ENV.delete('CONFLUENCE_API_TOKEN')
+  ENV.delete('CONFLUENCE_USER_EMAIL')
+
+  adoc_content = 'atlasMention:John_Doe[]'
+  html = Asciidoctor.convert(adoc_content, safe: :safe, backend: 'html5', extensions: proc { inline_macro AtlasMentionInlineMacro })
+
+  # Verify fallback behavior
+  assert_includes html, "@John Doe"
+end
+
+def test_atlas_mention_macro_user_not_found
+  setup_jira_env
+
+  # Mock the ConfluenceJiraClient to return nil for user
+  mock_client = Minitest::Mock.new
+  mock_client.expect(:find_user_by_fullname, nil, ["John Doe"])
+  ConfluenceJiraClient.stub :new, mock_client do
+    adoc_content = 'atlasMention:John_Doe[]'
+    html = Asciidoctor.convert(adoc_content, safe: :safe, backend: 'html5', extensions: proc { inline_macro AtlasMentionInlineMacro })
+
+    # Verify fallback behavior
+    assert_includes html, "@John Doe"
+  end
+end
