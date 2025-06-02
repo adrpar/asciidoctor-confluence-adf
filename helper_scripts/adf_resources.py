@@ -5,17 +5,10 @@ This module contains functions for processing ADF (Atlassian Document Format) no
 and converting them to AsciiDoc.
 """
 
-import copy
 import os
 import re
-import html
 from urllib.parse import urlparse, parse_qs
 import json
-import base64
-import requests
-
-from typing import Any, Dict
-from confluence_client import ConfluenceClient
 
 
 def process_media_node(node, context):
