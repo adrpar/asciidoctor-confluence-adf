@@ -15,6 +15,7 @@ This converter transforms AsciiDoc documents into Atlassian Document Format (ADF
 - Supports Confluence Table of Contents (TOC) macro via `:toc:`.
 - Automatically handles inline formatting (e.g., bold, italic, links).
 - Generates structured JSON for use in Confluence or other Atlassian tools.
+- Provides bidirectional conversion between AsciiDoc and Confluence content.
 
 > **Note:**  
 > This project has been created with the support of large language models (LLMs).  
@@ -715,19 +716,16 @@ ADF Output:
 }
 ```
 
-## Python Helper Scripts for Confluence Upload
+## Python Helper Scripts
 
-This repository also includes a set of Python helper scripts for uploading ADF JSON and images as attachments to Confluence Cloud.  
-You can find them in the [`helper_scripts/`](./helper_scripts/) directory.
+This repository includes Python helper scripts for bidirectional conversion between AsciiDoc and Confluence:
 
-**Features:**
-- Uploads images and ADF JSON to Confluence Cloud using the REST API.
-- Handles image extraction from AsciiDoc sources (including includes and imagesdir).
-- Automatically patches ADF media nodes with Confluence file IDs.
+1. **Upload to Confluence**: Convert and upload AsciiDoc content to Confluence with proper image handling
+2. **Download from Confluence**: Download Confluence content as AsciiDoc with support for recursive page hierarchies
 
-**Quickstart:**
+These scripts are located in the [`helper_scripts/`](./helper_scripts/) directory and provide a complete workflow for maintaining documentation in both AsciiDoc and Confluence formats.
 
-See [`helper_scripts/README.md`](./helper_scripts/README.md) for full documentation and advanced usage.
+See [`helper_scripts/README.md`](./helper_scripts/README.md) for detailed documentation and usage examples.
 
 ## Contributing
 
