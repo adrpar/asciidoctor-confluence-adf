@@ -16,6 +16,7 @@ from helper_scripts.adf_resources import (
     process_inline_extension_node,
     process_extension_node,
     process_inline_card_node,
+    process_task_list_node,
 )
 
 
@@ -681,8 +682,6 @@ def test_table_with_asciidoc_list_in_cell():
     context = {}
     output = process_table_node(adf_table, context)
 
-    print(output)
-
     # Assert the output matches the expected result
     assert output == expected_output
 
@@ -1326,3 +1325,31 @@ def test_process_inline_card_with_jira_ticket_title(mocker):
     mock_client.get_jira_ticket_title.assert_called_once_with(
         "https://adahealth.atlassian.net/browse/DEMO-123"
     )
+
+
+def test_process_task_list_node():
+    adf_task_list = {
+        "type": "taskList",
+        "attrs": {"localId": "taskList1"},
+        "content": [
+            {
+                "type": "taskItem",
+                "attrs": {"state": "DONE", "localId": "1"},
+                "content": [{"type": "text", "text": "Complete the documentation"}],
+            },
+            {
+                "type": "taskItem",
+                "attrs": {"state": "TODO", "localId": "2"},
+                "content": [{"type": "text", "text": "Review the code changes"}],
+            },
+        ],
+    }
+
+    context = {}
+    result = process_task_list_node(adf_task_list, context)
+    expected = [
+        "\n",
+        "* [x] Complete the documentation\n",
+        "* [ ] Review the code changes\n",
+    ]
+    assert result == expected

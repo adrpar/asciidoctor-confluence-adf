@@ -553,6 +553,10 @@ def process_node(node, context, indent=""):
     elif node_type == "listItem":
         item_lines = process_list_item_content(node, context, indent)
         return ["\n".join(item_lines)]
+    elif node_type == "taskList":
+        return process_task_list_node(node, context, indent)
+    elif node_type == "taskItem":
+        return process_task_item_node(node, context, indent)
     elif node_type == "codeBlock":
         return process_code_block_node(node, context)
     elif node_type == "extension":
@@ -562,18 +566,15 @@ def process_node(node, context, indent=""):
     elif node_type == "mention":
         return process_mention_node(node, context)
     elif node_type == "inlineCard":
-        return process_inline_card_node(node, context)  # Handle inlineCard nodes
+        return process_inline_card_node(node, context)
     elif node_type == "text":
-        # Handle direct text nodes
         return [process_text_node(node, context)]
-    # Process any other content
     elif node.get("content") and isinstance(node.get("content"), list):
         result = []
         for content_node in node.get("content"):
             result.extend(process_node(content_node, context, indent))
         return result
 
-    # Default case: return empty list for unhandled node types
     return []
 
 
@@ -710,7 +711,6 @@ def extract_page_id_from_url(url, base_url=None):
 
 def process_mention_node(node, context):
     """Process an ADF mention node and convert to AsciiDoc AtlasMention macro."""
-    print("Processing mention node:", node)
     mention_attrs = node.get("attrs", {})
     user_id = mention_attrs.get("id", "")
     mention_text = mention_attrs.get("text", "")
@@ -833,3 +833,26 @@ def fetch_jira_ticket_title(url, context):
         logging.warning(f"Failed to fetch Jira ticket title: {e}")
 
     return None
+
+
+def process_task_list_node(node, context, indent=""):
+    """Process a taskList node and convert it to a bulleted AsciiDoc list."""
+    result = ["\n"]  # Add a newline before the list starts
+
+    for task_item in node.get("content", []):
+        if task_item.get("type") == "taskItem":
+            result.extend(process_task_item_node(task_item, context, indent))
+
+    return result
+
+
+def process_task_item_node(node, context, indent=""):
+    """Process a taskItem node and convert it to a bulleted AsciiDoc list item."""
+    state = node.get("attrs", {}).get("state", "TODO")
+    checkbox = "[x]" if state == "DONE" else "[ ]"
+
+    # Extract the task text
+    task_text = get_node_text_content(node, context)
+
+    # Format the task item as a bulleted list
+    return [f"{indent}* {checkbox} {task_text}\n"]
