@@ -3,13 +3,20 @@ import json
 import requests
 import mimetypes
 import hashlib
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse, parse_qs
+import re
 
 
 class ConfluenceClient:
     """Client for interacting with Confluence API."""
 
-    def __init__(self, base_url, username, api_token, jira_base_url=None):
+    def __init__(
+        self,
+        base_url=os.environ.get("CONFLUENCE_BASE_URL"),
+        username=os.environ.get("CONFLUENCE_USER_EMAIL"),
+        api_token=os.environ.get("CONFLUENCE_API_TOKEN"),
+        jira_base_url=None,
+    ):
         """Initialize the Confluence client.
 
         Args:
@@ -462,6 +469,64 @@ class ConfluenceClient:
             ".tiff",
         ]
         return any(filename.lower().endswith(ext) for ext in media_extensions)
+
+    def get_confluence_page_title(self, url):
+        """Fetch the title of a Confluence page using its URL."""
+        page_id = self._extract_page_id_from_url(url)
+        if not page_id:
+            return None
+
+        api_url = f"{self.base_url}/wiki/rest/api/content/{page_id}?expand=title"
+        headers = self._auth_headers(content_type="application/json")
+
+        try:
+            response = requests.get(api_url, headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("title")
+        except Exception as e:
+            print(f"Failed to fetch Confluence page title: {e}")
+        return None
+
+    def get_jira_ticket_title(self, url):
+        """Fetch the title of a Jira ticket using its URL."""
+        issue_key = self._extract_jira_issue_key_from_url(url)
+        if not issue_key:
+            return None
+
+        api_url = f"{self.jira_base_url}/rest/api/2/issue/{issue_key}"
+        headers = self._auth_headers(content_type="application/json")
+
+        try:
+            response = requests.get(api_url, headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("fields", {}).get("summary")
+        except Exception as e:
+            print(f"Failed to fetch Jira ticket title: {e}")
+        return None
+
+    def _extract_page_id_from_url(self, url):
+        """Extract the page ID from a Confluence URL."""
+        parsed_url = urlparse(url)
+        query_params = parse_qs(parsed_url.query)
+
+        # Check for pageId in query parameters
+        if "pageId" in query_params:
+            return query_params["pageId"][0]
+
+        # Check for page ID in the path
+        match = re.search(r"/pages/(\d+)", parsed_url.path)
+        if match:
+            return match.group(1)
+        return None
+
+    def _extract_jira_issue_key_from_url(self, url):
+        """Extract the issue key from a Jira URL."""
+        match = re.search(r"/browse/([A-Z]+-\d+)", url)
+        if match:
+            return match.group(1)
+        return None
 
 
 def sanitize_filename(filename):

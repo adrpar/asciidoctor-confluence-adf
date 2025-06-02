@@ -1,5 +1,6 @@
 import os
 import pytest
+import json
 
 from helper_scripts.adf_resources import (
     update_adf_media_ids,
@@ -13,6 +14,8 @@ from helper_scripts.adf_resources import (
     process_table_node,
     process_table_cell_node,
     process_inline_extension_node,
+    process_extension_node,
+    process_inline_card_node,
 )
 
 
@@ -791,8 +794,106 @@ def test_process_jira_snapshot_extension():
     # Check that the fields are included
     assert 'fields="key,summary,description"' in result_text
 
-    # Check that the title is included
-    assert ".Architecture requirements for Example Product" in result_text
+    # Check that the title is included as an attribute
+    assert 'title="Architecture requirements for Example Product"' in result_text
+
+
+def test_process_jira_snapshot_with_title():
+    """Test processing a JIRA JQL snapshot extension node with a title."""
+    node = {
+        "type": "extension",
+        "attrs": {
+            "layout": "full-width",
+            "extensionType": "com.atlassian.confluence.macro.core",
+            "extensionKey": "jira-jql-snapshot",
+            "parameters": {
+                "macroParams": {
+                    "macroParams": {
+                        "value": json.dumps(
+                            {
+                                "levels": [
+                                    {
+                                        "jql": "project = DEMO",
+                                        "fieldsPosition": [
+                                            {"value": {"id": "key"}, "available": True},
+                                            {
+                                                "value": {"id": "summary"},
+                                                "available": True,
+                                            },
+                                            {
+                                                "value": {"id": "status"},
+                                                "available": True,
+                                            },
+                                        ],
+                                        "title": "Demo Project Issues",
+                                    }
+                                ]
+                            }
+                        )
+                    }
+                }
+            },
+        },
+    }
+
+    context = {}
+    result = process_extension_node(node, context)
+
+    # Check that the result contains the jiraIssuesTable macro with the title
+    result_text = "".join(result)
+    assert (
+        'jiraIssuesTable::[\'project = DEMO\', fields="key,summary,status", title="Demo Project Issues"]'
+        in result_text
+    )
+
+
+def test_process_jira_snapshot_without_title():
+    """Test processing a JIRA JQL snapshot extension node without a title."""
+    node = {
+        "type": "extension",
+        "attrs": {
+            "layout": "full-width",
+            "extensionType": "com.atlassian.confluence.macro.core",
+            "extensionKey": "jira-jql-snapshot",
+            "parameters": {
+                "macroParams": {
+                    "macroParams": {
+                        "value": json.dumps(
+                            {
+                                "levels": [
+                                    {
+                                        "jql": "project = DEMO",
+                                        "fieldsPosition": [
+                                            {"value": {"id": "key"}, "available": True},
+                                            {
+                                                "value": {"id": "summary"},
+                                                "available": True,
+                                            },
+                                            {
+                                                "value": {"id": "status"},
+                                                "available": True,
+                                            },
+                                        ],
+                                    }
+                                ]
+                            }
+                        )
+                    }
+                }
+            },
+        },
+    }
+
+    context = {}
+    result = process_extension_node(node, context)
+
+    # Check that the result contains the jiraIssuesTable macro without the title
+    result_text = "".join(result)
+    assert (
+        "jiraIssuesTable::['project = DEMO', fields=\"key,summary,status\"]"
+        in result_text
+    )
+    assert "title=" not in result_text
 
 
 def test_process_anchor_extension():
@@ -1095,7 +1196,7 @@ def test_process_mention_node():
         "attrs": {
             "id": "fake-user-id-111",
             "text": "John Doe",
-        }
+        },
     }
     context = {}
     result = process_mention_node(basic_mention, context)
@@ -1106,47 +1207,122 @@ def test_process_mention_node():
     # Test 2: Mention with @ prefix
     at_prefix_mention = {
         "type": "mention",
-        "attrs": {
-            "id": "fake-user-id-222",
-            "text": "@Jane Doe"
-        }
+        "attrs": {"id": "fake-user-id-222", "text": "@Jane Doe"},
     }
     context = {}
     result = process_mention_node(at_prefix_mention, context)
     assert result == ["atlasMention:Jane_Doe[]"]
-    
+
     # Test 3: Mention with no spaces in name
     no_space_mention = {
         "type": "mention",
-        "attrs": {
-            "id": "fake-user-id-333",
-            "text": "@JohnDoe"
-        }
+        "attrs": {"id": "fake-user-id-333", "text": "@JohnDoe"},
     }
     context = {}
     result = process_mention_node(no_space_mention, context)
     assert result == ["atlasMention:JohnDoe[]"]
-    
+
     # Test 4: Integration with process_node
     from helper_scripts.adf_resources import process_node
-    
+
     paragraph_with_mention = {
         "type": "paragraph",
         "content": [
             {
                 "type": "mention",
-                "attrs": {
-                    "id": "fake-user-id-111",
-                    "text": "@John Doe"
-                }
+                "attrs": {"id": "fake-user-id-111", "text": "@John Doe"},
             },
-            {
-                "type": "text",
-                "text": " please review this document."
-            }
-        ]
+            {"type": "text", "text": " please review this document."},
+        ],
     }
-    
+
     context = {}
     result = "".join(process_node(paragraph_with_mention, context))
     assert "atlasMention:John_Doe[] please review this document." in result
+
+
+def test_process_inline_card_node():
+    """Test processing an inlineCard node."""
+    node = {
+        "type": "inlineCard",
+        "attrs": {
+            "url": "https://adahealth.atlassian.net/wiki/spaces/ATIC/pages/1057302499492689"
+        },
+    }
+    context = {}
+    result = process_inline_card_node(node, context)
+    assert result == [
+        "link:https://adahealth.atlassian.net/wiki/spaces/ATIC/pages/1057302499492689[https://adahealth.atlassian.net/wiki/spaces/ATIC/pages/1057302499492689]"
+    ]
+
+
+def test_process_inline_card_in_paragraph():
+    """Test processing an inlineCard node within a paragraph."""
+    node = {
+        "type": "paragraph",
+        "content": [
+            {"type": "text", "text": "Here is a link: "},
+            {
+                "type": "inlineCard",
+                "attrs": {
+                    "url": "https://adahealth.atlassian.net/wiki/spaces/ATIC/pages/1057302499492689"
+                },
+            },
+            {"type": "text", "text": " and some more text."},
+        ],
+    }
+    context = {}
+    result = process_node(node, context)
+    result_text = "".join(result).strip()  # Strip trailing whitespace
+
+    # Verify the inlineCard is rendered as a link
+    assert (
+        "link:https://adahealth.atlassian.net/wiki/spaces/ATIC/pages/1057302499492689[https://adahealth.atlassian.net/wiki/spaces/ATIC/pages/1057302499492689]"
+        in result_text
+    )
+
+    # Verify the surrounding text is preserved
+    assert result_text.startswith("Here is a link: ")
+    assert result_text.endswith(" and some more text.")
+
+
+def test_process_inline_card_with_confluence_page_title(mocker):
+    """Test processing an inlineCard node with a Confluence page title."""
+    mock_client = mocker.Mock()
+    mock_client.get_confluence_page_title.return_value = "Example Page Title"
+
+    context = {"confluence_client": mock_client}
+    node = {
+        "type": "inlineCard",
+        "attrs": {
+            "url": "https://adahealth.atlassian.net/wiki/spaces/ATIC/pages/1057302499492689"
+        },
+    }
+
+    result = process_inline_card_node(node, context)
+    assert result == [
+        "link:https://adahealth.atlassian.net/wiki/spaces/ATIC/pages/1057302499492689[Example Page Title]"
+    ]
+    mock_client.get_confluence_page_title.assert_called_once_with(
+        "https://adahealth.atlassian.net/wiki/spaces/ATIC/pages/1057302499492689"
+    )
+
+
+def test_process_inline_card_with_jira_ticket_title(mocker):
+    """Test processing an inlineCard node with a Jira ticket title."""
+    mock_client = mocker.Mock()
+    mock_client.get_jira_ticket_title.return_value = "Example Ticket Title"
+
+    context = {"confluence_client": mock_client}
+    node = {
+        "type": "inlineCard",
+        "attrs": {"url": "https://adahealth.atlassian.net/browse/DEMO-123"},
+    }
+
+    result = process_inline_card_node(node, context)
+    assert result == [
+        "link:https://adahealth.atlassian.net/browse/DEMO-123[Example Ticket Title]"
+    ]
+    mock_client.get_jira_ticket_title.assert_called_once_with(
+        "https://adahealth.atlassian.net/browse/DEMO-123"
+    )

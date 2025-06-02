@@ -10,8 +10,12 @@ import os
 import re
 import html
 from urllib.parse import urlparse, parse_qs
+import json
+import base64
+import requests
 
 from typing import Any, Dict
+from confluence_client import ConfluenceClient
 
 
 def process_media_node(node, context):
@@ -71,12 +75,12 @@ def process_paragraph_node(node, context, indent=""):
     """Process a paragraph node and convert to AsciiDoc paragraph."""
     # Special handling for paragraphs with mixed content (text and inline extensions)
     if node.get("content"):
-        additional_processing_needs = ["inlineExtension", "mention"]
+        additional_processing_needs = ["inlineExtension", "mention", "inlineCard"]
         has_additional_processing_need = any(
             child.get("type") in additional_processing_needs
             for child in node.get("content", [])
         )
-        
+
         if has_additional_processing_need:
             # Process each child node individually and combine
             parts = []
@@ -88,9 +92,9 @@ def process_paragraph_node(node, context, indent=""):
                 else:
                     # Process other nodes normally
                     parts.append(get_node_text_content(child, context))
-            
+
             return [f"{indent}{''.join(parts)}\n"]
-    
+
     # Standard handling for simple paragraphs
     paragraph_text = get_node_text_content(node, context)
     if paragraph_text.strip():
@@ -246,44 +250,50 @@ def process_extension_node(node, context):
                 .get("macroParams", {})
                 .get("value", "{}")
             )
-            
-            import json
+
             macro_params = json.loads(macro_params_str)
-            
+
             # Extract JQL and fields from the first level
             if macro_params.get("levels") and len(macro_params["levels"]) > 0:
                 level = macro_params["levels"][0]
                 jql = level.get("jql", "")
-                
+
                 # Extract field names from fieldsPosition
                 fields = []
                 for field_obj in level.get("fieldsPosition", []):
-                    if field_obj.get("available", False) and field_obj.get("value", {}).get("id"):
+                    if field_obj.get("available", False) and field_obj.get(
+                        "value", {}
+                    ).get("id"):
                         fields.append(field_obj["value"]["id"])
-                
+
                 fields_str = ",".join(fields)
-                
-                # Create the jiraIssuesTable macro
-                result.append(f'\njiraIssuesTable::["{jql}", fields="{fields_str}"]\n')
-                
-                # Optionally include the title as a section heading
-                if level.get("title"):
-                    title = level.get("title")
-                    # Insert the title before the table
-                    result.insert(0, f"\n.{title}\n")
+
+                # Extract the title if present
+                title = level.get("title", "")
+
+                # Create the jiraIssuesTable macro with the title as an attribute
+                if title:
+                    result.append(
+                        f'\njiraIssuesTable::[\'{jql}\', fields="{fields_str}", title="{title}"]\n'
+                    )
+                else:
+                    result.append(
+                        f"\njiraIssuesTable::['{jql}', fields=\"{fields_str}\"]\n"
+                    )
         except Exception as e:
             # Log the error but continue processing
             import logging
+
             logging.warning(f"Error processing jira-jql-snapshot: {str(e)}")
             result.append(f"\n// Error processing JIRA snapshot: {str(e)}\n")
-            
+
     # Handle Workflow Approvers macro
     elif ext_key == "approvers-macro":
         try:
             # Verify required structure exists
             if "parameters" not in node.get("attrs", {}):
                 raise ValueError("Missing required parameters structure")
-                
+
             # Extract the data value parameter to determine the option
             data_value = (
                 node.get("attrs", {})
@@ -292,28 +302,34 @@ def process_extension_node(node, context):
                 .get("data", {})
                 .get("value", "")
             )
-            
+
             # Map the data value to the AsciiDoc option
-            option = "latest" if data_value == "Latest Approvals for Current Workflow" else "all"
-            
+            option = (
+                "latest"
+                if data_value == "Latest Approvals for Current Workflow"
+                else "all"
+            )
+
             # Create the workflowApproval macro
             result.append(f"\nworkflowApproval:{option}[]\n")
         except Exception as e:
             import logging
+
             logging.warning(f"Error processing approvers-macro: {str(e)}")
             result.append(f"\n// Error processing Workflow Approvers: {str(e)}\n")
-            
+
     # Handle Workflow Change Table macro
     elif ext_key == "document-control-table-macro":
         try:
             # Verify required structure exists
             if "parameters" not in node.get("attrs", {}):
                 raise ValueError("Missing required parameters structure")
-                
+
             # The document-control-table-macro doesn't have options in the Ruby extension
             result.append("\nworkflowChangeTable:[]\n")
         except Exception as e:
             import logging
+
             logging.warning(f"Error processing document-control-table-macro: {str(e)}")
             result.append(f"\n// Error processing Workflow Change Table: {str(e)}\n")
 
@@ -327,7 +343,9 @@ def process_inline_extension_node(node, context):
 
     if ext_key == "anchor":
         # Extract anchor ID from parameters
-        macro_params = node.get("attrs", {}).get("parameters", {}).get("macroParams", {})
+        macro_params = (
+            node.get("attrs", {}).get("parameters", {}).get("macroParams", {})
+        )
         # The anchor ID is in the unnamed parameter (empty string key)
         anchor_id = macro_params.get("", {}).get("value", "")
         if anchor_id:
@@ -337,9 +355,11 @@ def process_inline_extension_node(node, context):
             result.append(f"[[{anchor_id}]]")
     elif ext_key == "metadata-macro":
         # Extract data value from macro parameters
-        macro_params = node.get("attrs", {}).get("parameters", {}).get("macroParams", {})
+        macro_params = (
+            node.get("attrs", {}).get("parameters", {}).get("macroParams", {})
+        )
         data_value = macro_params.get("data", {}).get("value", "")
-        
+
         # Mapping of Confluence metadata values to appfoxWorkflowMetadata targets
         # This must match the KEYWORDS mapping in the Ruby extension
         WORKFLOW_METADATA_KEYWORDS_REVERSE = {
@@ -349,9 +369,9 @@ def process_inline_extension_node(node, context):
             "Expiry Date": "expiry",
             "Transition Date": "transition",
             "Unique Page ID": "pageid",
-            "Workflow Status": "status"
+            "Workflow Status": "status",
         }
-        
+
         # Lookup the target keyword for the data value
         target = WORKFLOW_METADATA_KEYWORDS_REVERSE.get(data_value)
         if target:
@@ -376,7 +396,7 @@ def get_node_text_content(node, context):
             mark_type = mark.get("type")
             if mark_type == "link":
                 href = mark.get("attrs", {}).get("href", "")
-                
+
                 # Check if this is an anchor link within the same page
                 if href.startswith("#"):
                     anchor_id = href[1:]  # Remove the '#' prefix
@@ -388,14 +408,19 @@ def get_node_text_content(node, context):
                     parts = href.split("#")
                     page_url = parts[0]
                     anchor_id = parts[1]
-                    page_id = extract_page_id_from_url(page_url, context.get("base_url"))
-                    
+                    page_id = extract_page_id_from_url(
+                        page_url, context.get("base_url")
+                    )
+
                     # Only process if we have a valid page_id and it exists in the mapping with the required structure
-                    if (page_id and 
-                        page_id in context.get("page_mapping", {}) and 
-                        "path" in context.get("page_mapping", {}).get(page_id, {})):
-                        
-                        current_dir = os.path.dirname(context.get("current_file_path", ""))
+                    if (
+                        page_id
+                        and page_id in context.get("page_mapping", {})
+                        and "path" in context.get("page_mapping", {}).get(page_id, {})
+                    ):
+                        current_dir = os.path.dirname(
+                            context.get("current_file_path", "")
+                        )
                         target_path = context.get("page_mapping")[page_id]["path"]
                         rel_path = os.path.relpath(target_path, current_dir)
                         text = f"xref:{rel_path}#{anchor_id}[{text}]"
@@ -403,9 +428,11 @@ def get_node_text_content(node, context):
                     else:
                         # Fall back to a regular link if the page mapping doesn't have the expected structure
                         link_href = href
-                        
+
                 # Check if this is a JIRA link
-                jira_base_url = os.environ.get("JIRA_BASE_URL", "https://jira.example.com")
+                jira_base_url = os.environ.get(
+                    "JIRA_BASE_URL", "https://jira.example.com"
+                )
                 if href and jira_base_url in href:
                     # Extract the issue key from URL
                     match = re.search(r"/browse/([A-Z]+-\d+)", href)
@@ -413,7 +440,7 @@ def get_node_text_content(node, context):
                         issue_key = match.group(1)
                         text = f"jira:{issue_key}[]"
                         continue
-                
+
                 link_href = href
             elif mark_type == "strong":
                 text = f"*{text}*"
@@ -534,6 +561,8 @@ def process_node(node, context, indent=""):
         return process_inline_extension_node(node, context)
     elif node_type == "mention":
         return process_mention_node(node, context)
+    elif node_type == "inlineCard":
+        return process_inline_card_node(node, context)  # Handle inlineCard nodes
     elif node_type == "text":
         # Handle direct text nodes
         return [process_text_node(node, context)]
@@ -646,36 +675,36 @@ def process_list_item_content(item_node, context, indent=""):
 def extract_page_id_from_url(url, base_url=None):
     """
     Extract the page ID from a Confluence URL.
-    
+
     Args:
         url (str): The Confluence URL
         base_url (str, optional): The base URL of the Confluence instance
-        
+
     Returns:
         str: The page ID or None if not found
     """
     if not url:
         return None
-    
+
     # Parse the URL to get query parameters
     parsed_url = urlparse(url)
     query_params = parse_qs(parsed_url.query)
-    
+
     # Check for pageId in query parameters
-    if 'pageId' in query_params:
-        return query_params['pageId'][0]
-    
+    if "pageId" in query_params:
+        return query_params["pageId"][0]
+
     # Check for page ID in the path (some Confluence URLs use this format)
     # Example: /pages/viewpage.action/123456 or /wiki/spaces/TEST/pages/123456
-    match = re.search(r'/pages/(\d+)/?', parsed_url.path)
+    match = re.search(r"/pages/(\d+)/?", parsed_url.path)
     if match:
         return match.group(1)
-    
+
     # Also check alternative formats
-    match = re.search(r'/pages/viewpage.action/(\d+)/?', parsed_url.path)
+    match = re.search(r"/pages/viewpage.action/(\d+)/?", parsed_url.path)
     if match:
         return match.group(1)
-    
+
     return None
 
 
@@ -685,17 +714,122 @@ def process_mention_node(node, context):
     mention_attrs = node.get("attrs", {})
     user_id = mention_attrs.get("id", "")
     mention_text = mention_attrs.get("text", "")
-    
+
     # Extract the username from the mention text (remove @ prefix)
     if mention_text.startswith("@"):
         username = mention_text[1:]
     else:
         username = mention_text
-    
+
     # Convert spaces to underscores for the macro format
     macro_username = username.replace(" ", "_")
-    
+
     # Store mapping of usernames to IDs in context for potential reverse conversion
     context.setdefault("mention_username_to_id", {})[macro_username] = user_id
-    
+
     return [f"atlasMention:{macro_username}[]"]
+
+
+def process_inline_card_node(node, context):
+    """Process an inlineCard node and convert it to an AsciiDoc link with the title."""
+    url = node.get("attrs", {}).get("url", "")
+    if not url:
+        return []
+
+    # Use the ConfluenceClient to fetch the title
+    client = context.get("confluence_client")
+
+    if not client:
+        return [f"link:{url}[{url}]"]
+
+    title = None
+    if "atlassian.net/wiki" in url:
+        # Fetch Confluence page title
+        title = client.get_confluence_page_title(url)
+    elif "atlassian.net/browse" in url:
+        # Fetch Jira ticket title
+        title = client.get_jira_ticket_title(url)
+
+    # Use the title as the link text if available, otherwise use the URL
+    link_text = title if title else url
+    return [f"link:{url}[{link_text}]"]
+
+
+def extract_title_from_url(url, context):
+    """Extract the title of the referring Confluence page or Jira ticket."""
+    if "atlassian.net/wiki" in url:
+        # Handle Confluence page
+        return fetch_confluence_page_title(url, context)
+    elif "atlassian.net/browse" in url:
+        # Handle Jira ticket
+        return fetch_jira_ticket_title(url, context)
+    return None
+
+
+def fetch_confluence_page_title(url, context):
+    """Fetch the title of a Confluence page using its URL."""
+    base_url = context.get("confluence_base_url", os.environ.get("CONFLUENCE_BASE_URL"))
+    api_token = os.environ.get("CONFLUENCE_API_TOKEN")
+    user_email = os.environ.get("CONFLUENCE_USER_EMAIL")
+
+    if not base_url or not api_token or not user_email:
+        return None
+
+    # Extract the page ID from the URL
+    page_id = extract_page_id_from_url(url, base_url)
+    if not page_id:
+        return None
+
+    # Query the Confluence API for the page title
+    api_url = f"{base_url}/rest/api/content/{page_id}?expand=title"
+    headers = {
+        "Authorization": f"Basic {base64.b64encode(f'{user_email}:{api_token}'.encode()).decode()}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        response = requests.get(api_url, headers=headers)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("title")
+    except Exception as e:
+        import logging
+
+        logging.warning(f"Failed to fetch Confluence page title: {e}")
+
+    return None
+
+
+def fetch_jira_ticket_title(url, context):
+    """Fetch the title of a Jira ticket using its URL."""
+    base_url = context.get("jira_base_url", os.environ.get("JIRA_BASE_URL"))
+    api_token = os.environ.get("JIRA_API_TOKEN")
+    user_email = os.environ.get("JIRA_USER_EMAIL")
+
+    if not base_url or not api_token or not user_email:
+        return None
+
+    # Extract the issue key from the URL
+    match = re.search(r"/browse/([A-Z]+-\d+)", url)
+    if not match:
+        return None
+    issue_key = match.group(1)
+
+    # Query the Jira API for the issue title
+    api_url = f"{base_url}/rest/api/2/issue/{issue_key}"
+    headers = {
+        "Authorization": f"Basic {base64.b64encode(f'{user_email}:{api_token}'.encode()).decode()}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        response = requests.get(api_url, headers=headers)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("fields", {}).get("summary")
+    except Exception as e:
+        import logging
+
+        logging.warning(f"Failed to fetch Jira ticket title: {e}")
+
+    return None

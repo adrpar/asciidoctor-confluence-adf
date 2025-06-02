@@ -593,3 +593,83 @@ def test_file_id_to_filename_mapping():
                         # Should handle the exception and return empty mappings
                         assert len(media_files) == 0
                         assert len(file_id_to_filename) == 0
+
+
+def test_get_confluence_page_title_success(client):
+    """Test fetching a Confluence page title successfully."""
+    with patch("requests.get") as mock_get:
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"title": "Example Page Title"}
+        mock_get.return_value = mock_response
+
+        url = "https://example.atlassian.net/wiki/spaces/TEST/pages/123456"
+        title = client.get_confluence_page_title(url)
+
+        # Verify the API was called with the correct URL
+        mock_get.assert_called_once_with(
+            "https://example.atlassian.net/wiki/rest/api/content/123456?expand=title",
+            headers=client._auth_headers(content_type="application/json"),
+        )
+
+        # Verify the title is returned
+        assert title == "Example Page Title"
+
+
+def test_get_confluence_page_title_failure(client):
+    """Test handling of failure when fetching a Confluence page title."""
+    with patch("requests.get") as mock_get:
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_response.text = "Not Found"
+        mock_get.return_value = mock_response
+
+        url = "https://example.atlassian.net/wiki/spaces/TEST/pages/123456"
+        title = client.get_confluence_page_title(url)
+
+        # Verify the API was called
+        mock_get.assert_called_once()
+
+        # Verify None is returned on failure
+        assert title is None
+
+
+def test_get_jira_ticket_title_success(client):
+    """Test fetching a Jira ticket title successfully."""
+    with patch("requests.get") as mock_get:
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "fields": {"summary": "Example Ticket Title"}
+        }
+        mock_get.return_value = mock_response
+
+        url = "https://example.atlassian.net/browse/TEST-123"
+        title = client.get_jira_ticket_title(url)
+
+        # Verify the API was called with the correct URL
+        mock_get.assert_called_once_with(
+            "https://example.atlassian.net/rest/api/2/issue/TEST-123",
+            headers=client._auth_headers(content_type="application/json"),
+        )
+
+        # Verify the title is returned
+        assert title == "Example Ticket Title"
+
+
+def test_get_jira_ticket_title_failure(client):
+    """Test handling of failure when fetching a Jira ticket title."""
+    with patch("requests.get") as mock_get:
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_response.text = "Not Found"
+        mock_get.return_value = mock_response
+
+        url = "https://example.atlassian.net/browse/TEST-123"
+        title = client.get_jira_ticket_title(url)
+
+        # Verify the API was called
+        mock_get.assert_called_once()
+
+        # Verify None is returned on failure
+        assert title is None

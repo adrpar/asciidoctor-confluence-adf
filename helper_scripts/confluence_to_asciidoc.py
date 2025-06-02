@@ -180,6 +180,7 @@ def convert_adf_to_asciidoc(
     page_mapping=None,
     current_file_path=None,
     base_url=None,
+    client=None,
 ):
     """Convert ADF content to AsciiDoc."""
     if content is None:
@@ -193,7 +194,8 @@ def convert_adf_to_asciidoc(
         "page_mapping": page_mapping or {},
         "current_file_path": current_file_path,
         "base_url": base_url,
-        "images_dir": images_dir or "images",  # Default to "images" if not provided
+        "images_dir": images_dir or "images",
+        "confluence_client": client,
     }
 
     result = []
@@ -295,8 +297,6 @@ def download_page_recursive(
     output_filename = sanitize_filename(page_title)
     output_path = os.path.join(page_dir, f"{output_filename}.adoc")
 
-    print(media_files)
-
     asciidoc_content = convert_adf_to_asciidoc(
         adf_content,
         title=page_title,
@@ -307,6 +307,7 @@ def download_page_recursive(
         page_mapping=page_mapping,
         current_file_path=output_path,
         base_url=client.base_url,
+        client=client,
     )
 
     # Save AsciiDoc file

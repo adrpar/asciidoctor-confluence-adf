@@ -482,6 +482,37 @@ class JiraMacroTest < Minitest::Test
     
     nil
   end
+
+  def test_jira_issues_table_macro_with_title
+    setup_jira_env
+
+    # Mock response for Jira issues
+    mock_issues = {
+      "issues" => [
+        {
+          "key" => "DEMO-1",
+          "fields" => {
+            "summary" => "First issue",
+            "status" => { "name" => "To Do", "statusCategory" => { "name" => "To Do" } }
+          }
+        }
+      ]
+    }
+
+    # Stub Net::HTTP.start to return the mock response
+    Net::HTTP.stub :start, mock_api_responses(mock_issues) do
+      # Test with the title attribute
+      adoc_content = 'jiraIssuesTable::["project = DEMO", fields="key,summary,status", title="Demo Project Issues"]'
+      html = load_and_convert_jira_table(adoc_content)
+
+      # Verify the title is rendered as bold text
+      assert_includes html, '<strong>Demo Project Issues</strong>'
+      # Verify the table content is still rendered correctly
+      assert_includes html, 'DEMO-1'
+      assert_includes html, 'First issue'
+      assert_includes html, 'To Do'
+    end
+  end
 end
 
 def test_atlas_mention_macro_with_adf_output
