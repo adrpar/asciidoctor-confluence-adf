@@ -756,3 +756,72 @@ def test_get_child_pages_pagination(client):
 
         assert first_call_params["start"] == 0
         assert second_call_params["start"] == 50
+
+
+def test_download_media_files_pagination():
+    """Test that download_media_files handles pagination correctly."""
+    client = ConfluenceClient("https://example.com", "user", "pass")
+
+    with patch.object(client, "_paginate") as mock_paginate, patch("requests.get") as mock_get:
+        # Set up mock to return multiple pages of attachments
+        mock_paginate.return_value = [
+            # First page of attachments
+            {
+                "id": "att1", 
+                "title": "image1.png",
+                "extensions": {"fileId": "uuid-123"}
+            },
+            # Second page of attachments
+            {
+                "id": "att2", 
+                "title": "image2.jpg",
+                "extensions": {"fileId": "uuid-456"}
+            },
+            # Third page of attachments
+            {
+                "id": "att3", 
+                "title": "image3.gif",
+                "metadata": {"mediaId": "uuid-789"}
+            },
+            # Non-media file should be filtered out
+            {
+                "id": "att4", 
+                "title": "document.txt"
+            }
+        ]
+
+        # Mock the file download requests
+        mock_download = MagicMock()
+        mock_download.status_code = 200
+        mock_download.iter_content.return_value = [b"test content"]
+        mock_get.return_value = mock_download
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            media_files, file_id_to_filename = client.download_media_files("12345", tmpdirname)
+            
+            # Verify _paginate was called with the correct parameters
+            mock_paginate.assert_called_once()
+            call_args = mock_paginate.call_args
+            assert call_args[1]["url_template"] == "/wiki/rest/api/content/{page_id}/child/attachment"
+            assert call_args[1]["path_params"] == {"page_id": "12345"}
+            assert call_args[1]["limit"] == 50
+
+            # Should download 3 files (ignores document.txt)
+            assert len(media_files) == 3
+            assert len(file_id_to_filename) == 6  # 3 IDs + 3 UUIDs
+            
+            # Check all the expected mappings are present
+            assert file_id_to_filename["att1"] == "image1.png"
+            assert file_id_to_filename["uuid-123"] == "image1.png"
+            assert file_id_to_filename["att2"] == "image2.jpg"
+            assert file_id_to_filename["uuid-456"] == "image2.jpg"
+            assert file_id_to_filename["att3"] == "image3.gif"
+            assert file_id_to_filename["uuid-789"] == "image3.gif"
+            
+            # Verify files were created
+            assert os.path.exists(os.path.join(tmpdirname, "image1.png"))
+            assert os.path.exists(os.path.join(tmpdirname, "image2.jpg"))
+            assert os.path.exists(os.path.join(tmpdirname, "image3.gif"))
+            
+            # Verify download was called for each media file
+            assert mock_get.call_count == 3

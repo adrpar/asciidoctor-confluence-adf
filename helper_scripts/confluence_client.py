@@ -289,21 +289,29 @@ class ConfluenceClient:
         media_files = []
         file_id_to_filename = {}  # Create mapping of ID to filename
 
-        # Get attachments list
-        url = f"{self.base_url}/wiki/rest/api/content/{page_id}/child/attachment"
-        response = requests.get(url, headers=self._auth_headers())
+        # Get all attachments with pagination
+        url_template = "/wiki/rest/api/content/{page_id}/child/attachment"
+        path_params = {"page_id": page_id}
+        
+        # Use the _paginate method to get all attachments
+        attachments = self._paginate(
+            url_template=url_template,
+            path_params=path_params,
+            limit=50
+        )
+        
+        # If no attachments found with the first URL format, try alternative format
+        if not attachments:
+            url_template = "/rest/api/content/{page_id}/child/attachment"
+            attachments = self._paginate(
+                url_template=url_template,
+                path_params=path_params,
+                limit=50
+            )
 
-        if response.status_code != 200:
-            # Try alternate URL format
-            url = f"{self.base_url}/rest/api/content/{page_id}/child/attachment"
-            response = requests.get(url, headers=self._auth_headers())
-
-        if response.status_code != 200:
-            print(f"Failed to get attachments for page {page_id}")
+        if not attachments:
+            print(f"No attachments found for page {page_id}")
             return [], {}  # Return empty lists for both values
-
-        data = response.json()
-        attachments = data.get("results", [])
 
         # Download each attachment that is a media file
         for attachment in attachments:
