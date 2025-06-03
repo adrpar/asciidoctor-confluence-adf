@@ -26,8 +26,7 @@ class FileUtils:
 
     @staticmethod
     def sanitize_filename(filename):
-        """Convert a string to a valid filename."""
-        # Remove invalid characters and replace spaces with underscores
+        """Convert a string to a valid filename. Removes invalid characters and replace spaces with underscores."""
         valid_chars = (
             "-_.() abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         )
@@ -138,6 +137,8 @@ class AdfToAsciidocConverter:
         current_file_path=None,
         base_url=None,
         client=None,
+        is_root=False,
+        root_dir=None,
     ):
         """Convert ADF content to AsciiDoc."""
         if content is None:
@@ -161,32 +162,30 @@ class AdfToAsciidocConverter:
         if title:
             result.append(f"= {title}\n")
 
-        # Use the ABSOLUTE path for imagesdir
-        if current_file_path:
-            # Get the directory containing the current file
-            file_dir = os.path.dirname(os.path.abspath(current_file_path))
+        if current_file_path and root_dir:
+            # For all documents, reference the base_path attribute
+            if is_root:
+                # For the root document, define the base_path attribute as an absolute path
+                absolute_base_path = os.path.abspath(root_dir)
+                result.append(f":base_path: {absolute_base_path}\n")
 
-            # Calculate absolute path to images directory
-            if not os.path.isabs(images_dir):
-                # If images_dir is relative, make it absolute
-                absolute_images_path = os.path.abspath(
-                    os.path.join(file_dir, images_dir)
-                )
+            # Get the path relative to the root for the current file's images
+            rel_path = os.path.relpath(os.path.dirname(current_file_path), root_dir)
+
+            # Use the base_path for imagesdir, adjusted for this page's location
+            if rel_path == ".":
+                # Root document
+                result.append(f":imagesdir: {{base_path}}/{images_dir}\n\n")
             else:
-                # If images_dir is already absolute, use it directly
-                absolute_images_path = images_dir
-
-            # Add the imagesdir attribute with the true absolute path
-            result.append(f":imagesdir: {absolute_images_path}\n\n")
+                # Child document
+                result.append(f":imagesdir: {{base_path}}/{rel_path}/{images_dir}\n\n")
         else:
             # Fallback - should not happen if current_file_path is always provided
             result.append(f":imagesdir: {images_dir}\n\n")
 
-        # Process the content
         for node in content.get("content", []):
             result.extend(process_node(node, context))
 
-        # Join all parts
         return "".join(result)
 
 
@@ -222,6 +221,7 @@ class ConfluenceDownloader:
         self,
         page_id,
         config,
+        base_dir,
         current_depth=0,
         visited_pages=None,
         is_root=False,
@@ -233,11 +233,12 @@ class ConfluenceDownloader:
         Args:
             page_id: ID of the page to download
             config: DownloadConfig object with settings
+            base_dir: The root directory for all output paths
             current_depth: Current recursion depth
             visited_pages: Set of already visited pages
             is_root: Whether this is the root page being downloaded
             parent_dir: Parent directory for this page
-            page_mapping: Dictionary mapping page IDs to information
+            page_mapping: Dictionary mapping page ID to information
         """
         # Initialize tracking collections if not provided
         visited_pages = visited_pages or set()
@@ -245,7 +246,7 @@ class ConfluenceDownloader:
 
         # Skip if we've already visited this page or exceeded max depth
         if page_id in visited_pages or current_depth > config.max_depth:
-            return
+            return page_mapping  # Make sure to return the mapping
 
         visited_pages.add(page_id)
         logger.info(f"Processing page {page_id} at depth {current_depth}...")
@@ -254,17 +255,22 @@ class ConfluenceDownloader:
         page_info = self.client.get_page_info(page_id)
         if not page_info:
             logger.error(f"Failed to retrieve information for page {page_id}")
-            return
+            return page_mapping  # Return the mapping even on error
 
         page_title = page_info.get("title", f"Confluence Page {page_id}")
+        parent_id = (
+            page_info.get("ancestors", [{}])[-1].get("id")
+            if page_info.get("ancestors")
+            else None
+        )
 
-        # Create directory for this page if not root
+        # Create directory for this page
         if is_root:
-            page_dir = config.output_dir
+            page_dir = base_dir
         else:
             # Create a subdirectory for this page
             sanitized_title = self.file_utils.sanitize_filename(page_title)
-            page_dir = os.path.join(parent_dir or config.output_dir, sanitized_title)
+            page_dir = os.path.join(parent_dir or base_dir, sanitized_title)
 
         self.file_utils.ensure_dir_exists(page_dir)
 
@@ -276,7 +282,7 @@ class ConfluenceDownloader:
         adf_content = self.client.get_page_content(page_id)
         if not adf_content:
             logger.error(f"Failed to retrieve content for page {page_id}")
-            return
+            return page_mapping
 
         # Download media files
         logger.info(f"Downloading media files for page {page_id}...")
@@ -300,6 +306,8 @@ class ConfluenceDownloader:
             current_file_path=output_path,
             base_url=self.client.base_url,
             client=self.client,
+            is_root=is_root,
+            root_dir=base_dir,
         )
 
         # Save AsciiDoc file
@@ -310,29 +318,27 @@ class ConfluenceDownloader:
             "title": page_title,
             "path": output_path,
             "dir": page_dir,
+            "parent_id": parent_id,
+            "is_root": is_root,
         }
 
         logger.info(f"AsciiDoc content saved to {output_path}")
 
-        # Save the original ADF content as JSON for reference
-        adf_output_path = os.path.join(
-            page_dir, f"{self.file_utils.sanitize_filename(page_title)}.adf.json"
+        # Process child pages recursively
+        self._process_child_pages(
+            page_id,
+            page_info,
+            adf_content,
+            output_path,
+            page_dir,
+            base_dir,
+            current_depth,
+            visited_pages,
+            page_mapping,
+            config,
         )
-        self.file_utils.save_json_file(adf_output_path, adf_content)
 
-        # Process child and linked pages
-        if config.recursive and current_depth < config.max_depth:
-            self._process_child_pages(
-                page_id,
-                page_info,
-                adf_content,
-                output_path,
-                page_dir,
-                current_depth,
-                visited_pages,
-                page_mapping,
-                config,
-            )
+        return page_mapping
 
     def _process_child_pages(
         self,
@@ -341,13 +347,13 @@ class ConfluenceDownloader:
         adf_content,
         output_path,
         page_dir,
+        base_dir,
         current_depth,
         visited_pages,
         page_mapping,
         config,
     ):
         """Process child pages and linked pages."""
-        # Get child pages
         child_pages = self.client.get_child_pages(page_id)
 
         # Process child pages recursively BEFORE adding links to them
@@ -363,46 +369,21 @@ class ConfluenceDownloader:
                 self.download_page_recursive(
                     page_id=child_id,
                     config=config,
+                    base_dir=base_dir,
                     current_depth=current_depth + 1,
                     visited_pages=visited_pages,
                     parent_dir=page_dir,
                     page_mapping=page_mapping,
                 )
 
-        # Process linked pages if requested
-        if config.include_linked_pages:
-            linked_page_ids = LinkExtractor.extract_linked_page_ids(
-                adf_content, self.client.base_url
-            )
-            for linked_id in linked_page_ids:
-                if linked_id not in visited_pages:  # Skip if already visited
-                    # Create a modified config that doesn't follow links from linked pages
-                    linked_config = DownloadConfig(
-                        output_dir=config.output_dir,
-                        images_dir=config.images_dir,
-                        recursive=config.recursive,
-                        max_depth=config.max_depth,
-                        include_linked_pages=False,  # Don't follow links from linked pages
-                        page_style=config.page_style,
-                    )
-
-                    self.download_page_recursive(
-                        page_id=linked_id,
-                        config=linked_config,
-                        current_depth=current_depth + 1,
-                        visited_pages=visited_pages,
-                        parent_dir=page_dir,
-                        page_mapping=page_mapping,
-                    )
-
         # Add child pages list after all children have been processed
         if child_pages:
             self._add_child_page_references(
-                output_path, child_pages, page_mapping, config.page_style
+                output_path, child_pages, page_mapping, config.page_style, base_dir
             )
 
     def _add_child_page_references(
-        self, output_path, child_pages, page_mapping, page_style
+        self, output_path, child_pages, page_mapping, page_style, base_dir
     ):
         """Add child page references (xref or include) to the parent page."""
         with open(output_path, "a") as f:
@@ -411,37 +392,58 @@ class ConfluenceDownloader:
                 child_title = child_page.get("title")
                 if child_id in page_mapping:
                     child_path = page_mapping[child_id]["path"]
-                    rel_path = os.path.relpath(child_path, os.path.dirname(output_path))
+
+                    # Calculate path relative to the base directory
+                    rel_path = os.path.relpath(child_path, base_dir)
 
                     if page_style == "xref" or page_style == "both":
-                        # Add cross-reference link
-                        f.write(f"* xref:{rel_path}[{child_title}]\n")
+                        # Add cross-reference link using base_path attribute
+                        f.write(f"* xref:{{base_path}}/{rel_path}[{child_title}]\n")
 
                     if page_style == "include" or page_style == "both":
-                        # Add include directive comment (for information)
-                        f.write(f"include::{rel_path}[leveloffset=+1]\n")
+                        # Add include directive using base_path attribute
+                        f.write(f"include::{{base_path}}/{rel_path}[leveloffset=+1]\n")
 
     def create_consolidated_document(self, root_page_id, output_dir, page_mapping):
         """Create a consolidated document that includes all pages."""
-        if not root_page_id or root_page_id not in page_mapping:
-            # Check if we have pages in the mapping at all, and if so, use the first one as root
-            if page_mapping and not page_mapping.get(root_page_id):
-                logger.warning(
-                    f"Root page {root_page_id} not found in mapping, trying to use another page as root"
-                )
-                # Try to find a page without a parent to use as root
+        # Debug information
+        logger.debug(f"Creating consolidated document with root ID: {root_page_id}")
+        logger.debug(f"Available page IDs: {list(page_mapping.keys())}")
+
+        # First try to find the page with the exact ID
+        if root_page_id in page_mapping:
+            root_info = page_mapping[root_page_id]
+        else:
+            # If not found, try to find a page marked as is_root=True
+            root_pages = [
+                pid for pid, info in page_mapping.items() if info.get("is_root")
+            ]
+            if root_pages:
+                root_page_id = root_pages[0]
+                root_info = page_mapping[root_page_id]
+                logger.info(f"Using page {root_page_id} as root page (marked as root)")
+            else:
+                # Last resort: try to find a page without a parent
                 for pid, info in page_mapping.items():
-                    if "parent_id" not in info:  # This might be a root page
+                    if "parent_id" not in info or info["parent_id"] is None:
                         root_page_id = pid
-                        logger.info(f"Using page {pid} as root instead")
+                        root_info = info
+                        logger.info(f"Using page {pid} as root page (no parent)")
                         break
+                else:
+                    # If we still haven't found a root page, just use the first one
+                    if page_mapping:
+                        root_page_id = next(iter(page_mapping))
+                        root_info = page_mapping[root_page_id]
+                        logger.info(
+                            f"Using page {root_page_id} as root page (first in mapping)"
+                        )
+                    else:
+                        logger.error(
+                            "Cannot create consolidated document, no pages in mapping"
+                        )
+                        return None
 
-            # If we still don't have a valid root page, give up
-            if not root_page_id or root_page_id not in page_mapping:
-                logger.error("Cannot create consolidated document, root page not found")
-                return
-
-        root_info = page_mapping[root_page_id]
         root_title = root_info["title"]
 
         consolidated_path = os.path.join(
@@ -455,12 +457,15 @@ class ConfluenceDownloader:
         # Document attributes
         content.append(":toc: left\n")
         content.append(":toclevels: 4\n\n")
-        content.append(":imagesdir: images\n")
+        # Add base_path attribute as an absolute path
+        absolute_base_path = os.path.abspath(output_dir)
+        content.append(f":base_path: {absolute_base_path}\n")
+        content.append(f":imagesdir: {{base_path}}/images\n")
         content.append(":attribute-missing: warn\n\n")
 
         # Add include for the root page content (skipping its title)
         root_rel_path = os.path.relpath(root_info["path"], output_dir)
-        content.append(f"include::{root_rel_path}[lines=2..]\n\n")
+        content.append(f"include::{{base_path}}/{root_rel_path}[lines=2..]\n\n")
 
         # Generate includes for all child pages
         content.extend(
@@ -486,16 +491,14 @@ class ConfluenceDownloader:
         for child_id in children:
             child_info = page_mapping[child_id]
             child_path = child_info["path"]
-            child_dir = child_info["dir"]
+
+            # Calculate path relative to the base directory
             rel_path = os.path.relpath(child_path, base_dir)
 
-            # Get the relative path to the child's images directory
-            images_rel_path = os.path.join(os.path.dirname(rel_path), "images")
-
-            # Add custom imagesdir setting for this include
-            content.append(f":imagesdir: {images_rel_path}\n")
-            # Add include with appropriate level offset
-            content.append(f"include::{rel_path}[leveloffset=+{level}]\n\n")
+            # Add include with appropriate level offset using base_path attribute
+            content.append(
+                f"include::{{base_path}}/{rel_path}[leveloffset=+{level}]\n\n"
+            )
 
             # Recursively process this child's children
             content.extend(
@@ -589,9 +592,10 @@ def main(
 
         logger.info(f"Starting download of page {page_id} and its children...")
 
-        downloader.download_page_recursive(
+        page_mapping = downloader.download_page_recursive(
             page_id=page_id,
             config=config,
+            base_dir=output_dir,
             visited_pages=visited_pages,
             is_root=True,
             page_mapping=page_mapping,
@@ -600,7 +604,11 @@ def main(
         # Create consolidated document if requested
         if page_style in ["include", "both"]:
             logger.info(f"Creating consolidated document...")
-            downloader.create_consolidated_document(page_id, output_dir, page_mapping)
+            consolidated_path = downloader.create_consolidated_document(
+                page_id, output_dir, page_mapping
+            )
+            if consolidated_path:
+                logger.info(f"Consolidated document created at: {consolidated_path}")
 
         logger.info(f"Downloaded {len(visited_pages)} pages in total")
         return True

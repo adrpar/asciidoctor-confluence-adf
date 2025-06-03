@@ -704,9 +704,9 @@ def test_get_page_attachments_pagination(client):
         # Verify the API was called twice with different start parameters
         assert mock_make_request.call_count == 2
 
-        # Check that the URL path is correct
+        # Check that the URL path is correct - note that we now expect a full URL
         first_call_url = mock_make_request.call_args_list[0][0][0]
-        assert first_call_url == "/wiki/rest/api/content/12345/child/attachment"
+        assert first_call_url.endswith("/wiki/rest/api/content/12345/child/attachment")
 
         # Check that the parameters were passed correctly
         first_call_params = mock_make_request.call_args_list[0][1]["params"]
@@ -746,9 +746,9 @@ def test_get_child_pages_pagination(client):
         # Verify the API was called twice with different start parameters
         assert mock_make_request.call_count == 2
 
-        # Check that the URL path is correct
+        # Check that the URL path is correct - note that we now expect a full URL
         first_call_url = mock_make_request.call_args_list[0][0][0]
-        assert first_call_url == "/wiki/rest/api/content/12345/child/page"
+        assert first_call_url.endswith("/wiki/rest/api/content/12345/child/page")
 
         # Check that the parameters were passed correctly
         first_call_params = mock_make_request.call_args_list[0][1]["params"]

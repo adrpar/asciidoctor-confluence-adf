@@ -567,12 +567,16 @@ class ConfluenceClient:
 
         while True:
             # Build URL with path parameters
-            url_with_path = url_template.format(**path_params)
+            url_path = url_template.format(**path_params)
+
+            # Make sure we have a complete URL by joining it with base_url
+            # urljoin will handle making sure we don't have double slashes
+            full_url = urljoin(self.base_url, url_path)
 
             # Add pagination and other query parameters
             current_params = {"start": start, "limit": limit, **query_params}
 
-            response = self._make_request(url_with_path, params=current_params)
+            response = self._make_request(full_url, params=current_params)
 
             if not response:
                 break
