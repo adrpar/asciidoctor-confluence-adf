@@ -1396,3 +1396,285 @@ def test_formatting_with_trailing_spaces():
     for text, mark, expected in subsup_cases:
         result = apply_text_formatting(text, mark.get("type"), mark)
         assert result == expected, f"Failed for '{text}' with mark '{mark}'"
+
+
+def test_table_with_colspan():
+    """Test that colspan is properly handled in tables."""
+    adf_table = {
+        "type": "table",
+        "content": [
+            {
+                "type": "tableRow",
+                "content": [
+                    {
+                        "type": "tableCell",
+                        "attrs": {"colspan": 2},
+                        "content": [
+                            {
+                                "type": "paragraph",
+                                "content": [{"type": "text", "text": "Header spanning 2 columns"}],
+                            }
+                        ],
+                    }
+                ],
+            },
+            {
+                "type": "tableRow",
+                "content": [
+                    {
+                        "type": "tableCell",
+                        "content": [{"type": "text", "text": "Column 1"}],
+                    },
+                    {
+                        "type": "tableCell",
+                        "content": [{"type": "text", "text": "Column 2"}],
+                    },
+                ],
+            },
+        ],
+    }
+
+    # Expected AsciiDoc output
+    expected_output = """|===
+2+| Header spanning 2 columns
+| Column 1 | Column 2
+|===
+"""
+
+    # Process the table node
+    context = {}
+    output = process_table_node(adf_table, context)
+    assert output == expected_output
+
+
+def test_table_with_rowspan():
+    """Test that rowspan is properly handled in tables."""
+    adf_table = {
+        "type": "table",
+        "content": [
+            {
+                "type": "tableRow",
+                "content": [
+                    {
+                        "type": "tableCell",
+                        "attrs": {"rowspan": 2},
+                        "content": [
+                            {
+                                "type": "paragraph",
+                                "content": [{"type": "text", "text": "Cell spanning 2 rows"}],
+                            }
+                        ],
+                    },
+                    {
+                        "type": "tableCell",
+                        "content": [{"type": "text", "text": "Row 1, Column 2"}],
+                    },
+                ],
+            },
+            {
+                "type": "tableRow",
+                "content": [
+                    {
+                        "type": "tableCell",
+                        "content": [{"type": "text", "text": "Row 2, Column 2"}],
+                    },
+                ],
+            },
+        ],
+    }
+
+    # Expected AsciiDoc output
+    expected_output = """|===
+.2+| Cell spanning 2 rows | Row 1, Column 2
+| Row 2, Column 2
+|===
+"""
+
+    # Process the table node
+    context = {}
+    output = process_table_node(adf_table, context)
+    assert output == expected_output
+
+
+def test_table_with_combined_spans():
+    """Test that combined colspan and rowspan are properly handled in tables."""
+    adf_table = {
+        "type": "table",
+        "content": [
+            {
+                "type": "tableRow",
+                "content": [
+                    {
+                        "type": "tableCell",
+                        "attrs": {"colspan": 2, "rowspan": 2},
+                        "content": [
+                            {
+                                "type": "paragraph",
+                                "content": [{"type": "text", "text": "Cell spanning 2x2"}],
+                            }
+                        ],
+                    },
+                    {
+                        "type": "tableCell",
+                        "content": [{"type": "text", "text": "Row 1, Column 3"}],
+                    },
+                ],
+            },
+            {
+                "type": "tableRow",
+                "content": [
+                    {
+                        "type": "tableCell",
+                        "content": [{"type": "text", "text": "Row 2, Column 3"}],
+                    },
+                ],
+            },
+            {
+                "type": "tableRow",
+                "content": [
+                    {
+                        "type": "tableCell",
+                        "content": [{"type": "text", "text": "Row 3, Column 1"}],
+                    },
+                    {
+                        "type": "tableCell",
+                        "content": [{"type": "text", "text": "Row 3, Column 2"}],
+                    },
+                    {
+                        "type": "tableCell",
+                        "content": [{"type": "text", "text": "Row 3, Column 3"}],
+                    },
+                ],
+            },
+        ],
+    }
+
+    # Expected AsciiDoc output
+    expected_output = """|===
+2+.2+| Cell spanning 2x2 | Row 1, Column 3
+| Row 2, Column 3
+| Row 3, Column 1 | Row 3, Column 2 | Row 3, Column 3
+|===
+"""
+
+    # Process the table node
+    context = {}
+    output = process_table_node(adf_table, context)
+    assert output == expected_output
+
+
+def test_table_specific_example():
+    """Test the specific example of a table with first two rows having colspan of 2."""
+    adf_table = {
+        "type": "table",
+        "content": [
+            {
+                "type": "tableRow",
+                "content": [
+                    {
+                        "type": "tableCell",
+                        "attrs": {"colspan": 2},
+                        "content": [
+                            {
+                                "type": "paragraph",
+                                "content": [
+                                    {
+                                        "text": "Ada Assess 3.45",
+                                        "type": "text",
+                                        "marks": [{"type": "strong"}]
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            },
+            {
+                "type": "tableRow",
+                "content": [
+                    {
+                        "type": "tableCell",
+                        "attrs": {"colspan": 2},
+                        "content": [
+                            {
+                                "type": "paragraph",
+                                "content": [{"type": "text", "text": "Date of manufacture:"}],
+                            }
+                        ],
+                    }
+                ],
+            },
+            {
+                "type": "tableRow",
+                "content": [
+                    {
+                        "type": "tableCell",
+                        "content": [
+                            {
+                                "type": "paragraph",
+                                "content": [
+                                    {
+                                        "text": "Module",
+                                        "type": "text",
+                                        "marks": [{"type": "strong"}]
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                    {
+                        "type": "tableCell",
+                        "content": [
+                            {
+                                "type": "paragraph",
+                                "content": [
+                                    {
+                                        "text": "Version",
+                                        "type": "text",
+                                        "marks": [{"type": "strong"}]
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                ],
+            },
+            {
+                "type": "tableRow",
+                "content": [
+                    {
+                        "type": "tableCell",
+                        "content": [
+                            {
+                                "type": "paragraph",
+                                "content": [{"type": "text", "text": "Assess"}],
+                            }
+                        ],
+                    },
+                    {
+                        "type": "tableCell",
+                        "content": [
+                            {
+                                "type": "paragraph",
+                                "content": [{"type": "text", "text": "1.63"}],
+                            }
+                        ],
+                    },
+                ],
+            },
+        ],
+    }
+
+    # Expected AsciiDoc output
+    expected_output = """|===
+2+| *Ada Assess 3.45*
+2+| Date of manufacture:
+| *Module* | *Version*
+| Assess | 1.63
+|===
+"""
+
+    # Process the table node
+    context = {}
+    output = process_table_node(adf_table, context)
+    assert output == expected_output

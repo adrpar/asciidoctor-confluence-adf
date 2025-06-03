@@ -118,11 +118,22 @@ def process_table_row_node(node, context):
     for cell_node in node.get("content", []):
         cell_text, is_complex = process_table_cell_node(cell_node, context)
 
+        # Extract colspan and rowspan attributes
+        colspan = cell_node.get("attrs", {}).get("colspan", 1)
+        rowspan = cell_node.get("attrs", {}).get("rowspan", 1)
+
+        # Create span markers for AsciiDoc
+        span_marker = ""
+        if colspan > 1:
+            span_marker += f"{colspan}+"
+        if rowspan > 1:
+            span_marker += f".{rowspan}+"
+
         # Always include a pipe for consistency
         if is_complex:
-            cells.append(f"a| {cell_text}")
+            cells.append(f"{span_marker}a| {cell_text}")
         else:
-            cells.append(f"| {cell_text}")
+            cells.append(f"{span_marker}| {cell_text}")
 
     return " ".join(cells) + "\n"
 
