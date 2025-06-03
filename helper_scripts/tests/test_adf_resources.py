@@ -1353,3 +1353,46 @@ def test_process_task_list_node():
         "* [ ] Review the code changes\n",
     ]
     assert result == expected
+
+
+def test_formatting_with_trailing_spaces():
+    """Test that formatting is applied correctly when text has trailing spaces."""
+    from helper_scripts.adf_resources import apply_text_formatting
+
+    # Test with various formatting types and trailing spaces
+    test_cases = [
+        # (text, mark_type, expected_result with preserved spaces)
+        ("Bold text ", "strong", "*Bold text* "),
+        ("Italic text  ", "em", "_Italic text_  "),
+        ("Code text   ", "code", "`Code text`   "),
+        ("Strike text    ", "strike", "[.line-through]#Strike text#    "),
+        ("Underline text     ", "underline", "[.underline]#Underline text#     "),
+        ("No trailing space", "strong", "*No trailing space*"),
+        (
+            "Mixed text with spaces and tabs \t ",
+            "strong",
+            "*Mixed text with spaces and tabs* \t ",
+        ),
+    ]
+
+    for text, mark_type, expected in test_cases:
+        result = apply_text_formatting(text, mark_type)
+        assert result == expected, f"Failed for '{text}' with mark_type '{mark_type}'"
+
+    # Test with subsup marks that require the mark object
+    subsup_cases = [
+        (
+            "Subscript text ",
+            {"type": "subsup", "attrs": {"type": "sub"}},
+            "~Subscript text~ ",
+        ),
+        (
+            "Superscript text  ",
+            {"type": "subsup", "attrs": {"type": "sup"}},
+            "^Superscript text^  ",
+        ),
+    ]
+
+    for text, mark, expected in subsup_cases:
+        result = apply_text_formatting(text, mark.get("type"), mark)
+        assert result == expected, f"Failed for '{text}' with mark '{mark}'"

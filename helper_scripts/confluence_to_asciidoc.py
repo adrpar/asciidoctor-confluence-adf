@@ -284,6 +284,14 @@ class ConfluenceDownloader:
             logger.error(f"Failed to retrieve content for page {page_id}")
             return page_mapping
 
+        # Define output_filename here, before using it
+        output_filename = self.file_utils.sanitize_filename(page_title)
+
+        # Save the raw ADF content for reference
+        adf_output_path = os.path.join(page_dir, f"{output_filename}.adf.json")
+        self.file_utils.save_json_file(adf_output_path, adf_content)
+        logger.info(f"ADF content saved to {adf_output_path}")
+
         # Download media files
         logger.info(f"Downloading media files for page {page_id}...")
         media_files, file_id_to_filename = self.client.download_media_files(
@@ -292,7 +300,7 @@ class ConfluenceDownloader:
         logger.info(f"Downloaded {len(media_files)} media files to {image_output_dir}")
 
         # Convert ADF to AsciiDoc
-        output_filename = self.file_utils.sanitize_filename(page_title)
+        # Use the already defined output_filename variable
         output_path = os.path.join(page_dir, f"{output_filename}.adoc")
 
         asciidoc_content = self.converter.convert(

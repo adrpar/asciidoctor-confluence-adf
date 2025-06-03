@@ -15,9 +15,11 @@ def process_media_node(node, context):
     """Process a media node and convert to AsciiDoc image."""
     media_id = node.get("attrs", {}).get("id", "")
     alt_text = node.get("attrs", {}).get("alt", "")
+    file_title = node.get("attrs", {}).get("title", "")
 
     file_id_to_filename = context.get("file_id_to_filename", {})
 
+    # First try to get the filename from the mapping
     image_filename = file_id_to_filename.get(media_id, "")
 
     # If not found in mapping, try media_files as fallback
@@ -27,13 +29,22 @@ def process_media_node(node, context):
                 image_filename = media_file.get("title", "")
                 break
 
+    # If we have alt_text that looks like a filename (contains a file extension), use it
+    if alt_text and "." in alt_text and not image_filename:
+        image_filename = alt_text
+
+    # If we have a title and it looks like a filename, use it
+    if file_title and "." in file_title and not image_filename:
+        image_filename = file_title
+
     # If still not found, use the ID but ensure it has a file extension
     if not image_filename:
         image_filename = f"{media_id}.png"
     elif "." not in image_filename:
         image_filename = f"{image_filename}.png"
 
-    if alt_text:
+    # If alt_text exists and it's different from the filename, use it as a caption
+    if alt_text and alt_text != image_filename:
         return [f".{alt_text}\nimage::{image_filename}[]\n"]
     else:
         return [f"image::{image_filename}[]\n"]
@@ -326,10 +337,12 @@ def process_inline_extension_node(node, context):
             "Workflow Status": "status",
         }
 
+        # Lookup the target keyword for the data value
         target = WORKFLOW_METADATA_KEYWORDS_REVERSE.get(data_value)
         if target:
             result.append(f"appfoxWorkflowMetadata:{target}[]")
         else:
+            # If we don't recognize the data value, just use it as-is
             result.append(f"// Unknown workflow metadata: {data_value}")
 
     return result
@@ -378,8 +391,10 @@ def get_node_text_content(node, context):
                         text = f"xref:{rel_path}#{anchor_id}[{text}]"
                         continue
                     else:
+                        # Fall back to a regular link if the page mapping doesn't have the expected structure
                         link_href = href
 
+                # Check if this is a JIRA link
                 jira_base_url = os.environ.get(
                     "JIRA_BASE_URL", "https://jira.example.com"
                 )
@@ -392,28 +407,24 @@ def get_node_text_content(node, context):
                         continue
 
                 link_href = href
-            elif mark_type == "strong":
-                text = f"*{text}*"
-            elif mark_type == "em":
-                text = f"_{text}_"
-            elif mark_type == "code":
-                text = f"`{text}`"
-            elif mark_type == "strike":
-                text = f"[.line-through]#{text}#"
-            elif mark_type == "subsup" and mark.get("attrs", {}).get("type") == "sub":
-                text = f"~{text}~"
-            elif mark_type == "subsup" and mark.get("attrs", {}).get("type") == "sup":
-                text = f"^{text}^"
+            else:
+                # Use the shared formatting function for all other mark types
+                text = apply_text_formatting(text, mark_type, mark)
 
         # Apply link formatting after other formatting (if not already handled)
         if link_href:
-            if text.startswith("*") and text.endswith("*"):
-                text = text.strip("*")
-                text = f"*link:{link_href}[{text}]*"
-            elif text.startswith("_") and text.endswith("_"):
-                text = text.strip("_")
-                text = f"_link:{link_href}[{text}]_"
+            # For links with formatting, need to handle specially
+            if text.startswith("*") and text.endswith("*") and not text.endswith("* "):
+                # Extract the content without the markers
+                inner_text = text[1:-1]
+                text = f"*link:{link_href}[{inner_text}]*"
+            elif (
+                text.startswith("_") and text.endswith("_") and not text.endswith("_ ")
+            ):
+                inner_text = text[1:-1]
+                text = f"_link:{link_href}[{inner_text}]_"
             else:
+                # Standard link
                 text = f"link:{link_href}[{text}]"
 
         # Escape pipe characters in table cells
@@ -436,17 +447,7 @@ def process_text_node(node, context):
     for mark in marks:
         mark_type = mark.get("type", "")
 
-        if mark_type == "strong":
-            text = f"*{text}*"
-        elif mark_type == "em":
-            text = f"_{text}_"
-        elif mark_type == "code":
-            text = f"`{text}`"
-        elif mark_type == "strike":
-            text = f"[.line-through]#{text}#"
-        elif mark_type == "underline":
-            text = f"[.underline]#{text}#"
-        elif mark_type == "link":
+        if mark_type == "link":
             url = mark.get("attrs", {}).get("href", "")
 
             # Check if this is an internal Confluence page link
@@ -462,6 +463,8 @@ def process_text_node(node, context):
                     continue
 
             text = f"link:{url}[{text}]"
+        else:
+            text = apply_text_formatting(text, mark_type, mark)
 
     return text
 
@@ -718,3 +721,45 @@ def process_task_item_node(node, context, indent=""):
     task_text = get_node_text_content(node, context)
 
     return [f"{indent}* {checkbox} {task_text}\n"]
+
+
+def apply_text_formatting(text, mark_type, mark=None):
+    """
+    Apply AsciiDoc formatting to text based on mark type.
+
+    Args:
+        text (str): The text to format
+        mark_type (str): The type of formatting to apply
+        mark (dict, optional): The full mark object with additional attributes
+
+    Returns:
+        str: The formatted text with preserved trailing whitespace
+    """
+    # Get the content and trailing whitespace separately
+    content = text.rstrip()
+    trailing_space = text[len(content) :]
+
+    # Apply formatting to the content only
+    if mark_type == "strong":
+        return f"*{content}*{trailing_space}"
+
+    elif mark_type == "em":
+        return f"_{content}_{trailing_space}"
+
+    elif mark_type == "code":
+        return f"`{content}`{trailing_space}"
+
+    elif mark_type == "strike":
+        return f"[.line-through]#{content}#{trailing_space}"
+
+    elif mark_type == "underline":
+        return f"[.underline]#{content}#{trailing_space}"
+
+    elif mark_type == "subsup" and mark and mark.get("attrs", {}).get("type") == "sub":
+        return f"~{content}~{trailing_space}"
+
+    elif mark_type == "subsup" and mark and mark.get("attrs", {}).get("type") == "sup":
+        return f"^{content}^{trailing_space}"
+
+    # Return original text if no formatting applied
+    return text
