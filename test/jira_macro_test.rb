@@ -577,4 +577,24 @@ def test_atlas_mention_macro_user_not_found
     # Verify fallback behavior
     assert_includes html, "@John Doe"
   end
+
+  # Helper method to find a node of a specific type in ADF content
+  def find_node_by_type(content, type)
+    return nil unless content.is_a?(Array)
+    
+    # Look for the node type at this level
+    node = content.find { |n| n["type"] == type }
+    return node if node
+    
+    # Recursively search in child content
+    content.each do |child|
+      if child["content"].is_a?(Array)
+        found = find_node_by_type(child["content"], type)
+        return found if found
+      end
+    end
+    
+    nil
+  end
 end
+
