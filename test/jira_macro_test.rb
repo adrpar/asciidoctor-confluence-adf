@@ -482,5 +482,119 @@ class JiraMacroTest < Minitest::Test
     
     nil
   end
+
+  def test_jira_issues_table_macro_with_title
+    setup_jira_env
+
+    # Mock response for Jira issues
+    mock_issues = {
+      "issues" => [
+        {
+          "key" => "DEMO-1",
+          "fields" => {
+            "summary" => "First issue",
+            "status" => { "name" => "To Do", "statusCategory" => { "name" => "To Do" } }
+          }
+        }
+      ]
+    }
+
+    # Stub Net::HTTP.start to return the mock response
+    Net::HTTP.stub :start, mock_api_responses(mock_issues) do
+      # Test with the title attribute
+      adoc_content = 'jiraIssuesTable::["project = DEMO", fields="key,summary,status", title="Demo Project Issues"]'
+      html = load_and_convert_jira_table(adoc_content)
+
+      # Verify the title is rendered as bold text
+      assert_includes html, '<strong>Demo Project Issues</strong>'
+      # Verify the table content is still rendered correctly
+      assert_includes html, 'DEMO-1'
+      assert_includes html, 'First issue'
+      assert_includes html, 'To Do'
+    end
+  end
+end
+
+def test_atlas_mention_macro_with_adf_output
+  setup_jira_env
+
+  # Mock the ConfluenceJiraClient to return a user
+  mock_client = Minitest::Mock.new
+  mock_client.expect(:find_user_by_fullname, { "id" => "12345", "displayName" => "John Doe" }, ["John Doe"])
+  ConfluenceJiraClient.stub :new, mock_client do
+    adoc_content = 'atlasMention:John_Doe[]'
+    doc = Asciidoctor.load(adoc_content, safe: :safe, backend: 'adf', extensions: proc { inline_macro AtlasMentionInlineMacro })
+    adf_json = doc.converter.convert(doc, 'document')
+
+    # Parse the ADF output
+    adf_data = JSON.parse(adf_json)
+
+    # Verify the mention node
+    mention_node = adf_data["content"].find { |node| node["type"] == "mention" }
+    assert mention_node, "Should contain a mention node"
+    assert_equal "12345", mention_node["attrs"]["id"]
+    assert_equal "@John Doe", mention_node["attrs"]["text"]
+  end
+end
+
+def test_atlas_mention_macro_with_html_output
+  setup_jira_env
+
+  # Mock the ConfluenceJiraClient to return a user
+  mock_client = Minitest::Mock.new
+  mock_client.expect(:find_user_by_fullname, { "id" => "12345", "displayName" => "John Doe" }, ["John Doe"])
+  ConfluenceJiraClient.stub :new, mock_client do
+    adoc_content = 'atlasMention:John_Doe[]'
+    html = Asciidoctor.convert(adoc_content, safe: :safe, backend: 'html5', extensions: proc { inline_macro AtlasMentionInlineMacro })
+
+    # Verify the HTML output
+    assert_includes html, "@John Doe"
+  end
+end
+
+def test_atlas_mention_macro_missing_credentials
+  ENV.delete('CONFLUENCE_BASE_URL')
+  ENV.delete('CONFLUENCE_API_TOKEN')
+  ENV.delete('CONFLUENCE_USER_EMAIL')
+
+  adoc_content = 'atlasMention:John_Doe[]'
+  html = Asciidoctor.convert(adoc_content, safe: :safe, backend: 'html5', extensions: proc { inline_macro AtlasMentionInlineMacro })
+
+  # Verify fallback behavior
+  assert_includes html, "@John Doe"
+end
+
+def test_atlas_mention_macro_user_not_found
+  setup_jira_env
+
+  # Mock the ConfluenceJiraClient to return nil for user
+  mock_client = Minitest::Mock.new
+  mock_client.expect(:find_user_by_fullname, nil, ["John Doe"])
+  ConfluenceJiraClient.stub :new, mock_client do
+    adoc_content = 'atlasMention:John_Doe[]'
+    html = Asciidoctor.convert(adoc_content, safe: :safe, backend: 'html5', extensions: proc { inline_macro AtlasMentionInlineMacro })
+
+    # Verify fallback behavior
+    assert_includes html, "@John Doe"
+  end
+
+  # Helper method to find a node of a specific type in ADF content
+  def find_node_by_type(content, type)
+    return nil unless content.is_a?(Array)
+    
+    # Look for the node type at this level
+    node = content.find { |n| n["type"] == type }
+    return node if node
+    
+    # Recursively search in child content
+    content.each do |child|
+      if child["content"].is_a?(Array)
+        found = find_node_by_type(child["content"], type)
+        return found if found
+      end
+    end
+    
+    nil
+  end
 end
 

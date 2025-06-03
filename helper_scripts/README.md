@@ -36,6 +36,39 @@ When updating, the script will:
 - Patch the ADF file with the correct attachment IDs
 - Update the page content in Confluence, incrementing the version as required
 
+### Downloading from Confluence to AsciiDoc
+
+You can use the `confluence_to_asciidoc.py` script to download content from Confluence and convert it to AsciiDoc format.
+
+**Example: Download a single page**
+```
+uv run confluence_to_asciidoc.py --base-url https://your-domain.atlassian.net --page-id 123456 --output-dir ./output --username "user@example.com" --api-token "your-api-token"
+```
+
+**Example: Download a page and all its children**
+```
+uv run confluence_to_asciidoc.py --base-url https://your-domain.atlassian.net --page-id 123456 --output-dir ./output --username "user@example.com" --api-token "your-api-token" --recursive
+```
+
+**Additional options:**
+```
+--images-dir TEXT           Subdirectory name for downloaded images. Default: 'images'
+--recursive                 Recursively download child pages.
+--max-depth INTEGER         Maximum recursion depth when downloading pages. Default: 5
+--include-linked-pages      Also download pages linked from the content, not just child pages.
+--page-style [xref|include|both]
+                            How to handle child pages: 'xref' (separate linked pages), 'include' (consolidated), or 'both'
+--jira-base-url TEXT        Base URL of your Jira instance for issue links. Defaults to base-url.
+```
+
+The script will:
+- Download the specified page content as AsciiDoc
+- Save the original ADF JSON content for reference
+- Download and save all media attachments
+- With `--recursive`, download all child pages maintaining the hierarchy
+- With `--include-linked-pages`, also download pages linked from the content
+- With `--page-style` set to "include" or "both", create a consolidated document that combines all pages
+
 ## Running Tests
 
 To run the tests (from within the `helper_scripts` directory):

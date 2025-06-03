@@ -99,6 +99,13 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     
     if api_query_successful?(result)
       table_content = build_table(result[:data]['issues'], fields, field_result, credentials[:base_url])
+      
+      # Add bold title if specified
+      if attrs['title']
+        title_content = "**#{attrs['title']}**\n\n"
+        table_content = title_content + table_content
+      end
+
       parse_content parent, table_content, {}
     else
       handle_failed_api_query(parent, target, attrs, result)
@@ -167,7 +174,7 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
   private
 
   def valid_attributes?(attrs)
-    valid_attrs = ['jql', 'fields', '1']
+    valid_attrs = ['jql', 'fields', 'title', '1']
     unknown_attrs = attrs.keys.reject { |k| valid_attrs.include?(k.to_s()) || k.to_s().start_with?('_') }
     
     if unknown_attrs.empty?
