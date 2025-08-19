@@ -111,8 +111,8 @@ class ConfluenceClient:
         page_info = self.get_page_info(page_id)
         if not page_info:
             return False
-
-        current_version = page_info["version"]["number"]
+        
+        new_version = page_info["version"]["number"] + 1 if page_info["status"] != "draft" else page_info["version"]["number"]
         title = page_info["title"]
         status = page_info["status"]
 
@@ -121,7 +121,7 @@ class ConfluenceClient:
             "id": page_id,
             "status": status,
             "title": title,
-            "version": {"number": current_version + 1},  # increment version!
+            "version": {"number": new_version},
             "body": {"value": inner_json_str, "representation": "atlas_doc_format"},
         }
 
