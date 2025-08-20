@@ -22,6 +22,17 @@ This converter transforms AsciiDoc documents into Atlassian Document Format (ADF
 > As a result, some code may reflect an iterative or "vibe coding" style.  
 > The codebase will be gradually cleaned up and refactored for clarity and maintainability.
 
+## Configuration
+
+This project uses document attributes for configuration. Document attributes can be set:
+- In your AsciiDoc file header
+- Via command line with `-a attribute=value`
+
+See [document-attributes.md](./doc/document-attributes.md) for detailed documentation.
+
+> **Warning:**  
+> Be careful about blank lines in your AsciiDoc document header. Any blank line signals the end of the header, which means document attributes defined after that blank line will not be processed correctly.
+
 ---
 
 ## Macro Support
@@ -40,7 +51,19 @@ jira:ISSUE-456[Custom link text]
 - The macro will render as a link to the specified Jira issue.
 - You can optionally provide custom link text in the brackets.
 
-Set the `JIRA_BASE_URL` environment variable to control the link target.
+Set the `jira-base-url` document attribute to control the link target:
+
+```adoc
+= Document Title
+:jira-base-url: https://jira.example.com
+
+See jira:PROJECT-123[] for details.
+```
+
+You can also set it via command line:
+```bash
+asciidoctor -a jira-base-url=https://jira.example.com -r ./src/jira_macro.rb yourfile.adoc
+```
 
 ---
 
@@ -68,10 +91,19 @@ The macro will:
 3. Automatically format rich content in fields like description (including bullet lists, bold text, etc.)
 4. Create links to the Jira issues
 
-**Environment Variables:**
-- `JIRA_BASE_URL`: Base URL of your Jira instance
-- `CONFLUENCE_API_TOKEN`: API token for Jira authentication
-- `CONFLUENCE_USER_EMAIL`: Email for Jira authentication
+**Document Attributes:**
+- `jira-base-url`: Base URL of your Jira instance
+- `confluence-api-token`: API token for Jira authentication
+- `confluence-user-email`: Email for Jira authentication
+
+Set these document attributes either in your AsciiDoc file header or via command line:
+
+```bash
+asciidoctor -a jira-base-url=https://jira.example.com \
+            -a confluence-api-token=your-token \
+            -a confluence-user-email=your.email@example.com \
+            -r ./src/jira_macro.rb yourfile.adoc
+```
 
 **Note:** The converter handles complex formatting in Jira fields differently based on the backend:
 - With HTML backend: Renders description fields with AsciiDoc formatting preserved
@@ -90,10 +122,17 @@ atlasMention:Adrian_Partl[]
 - The macro will look up the user "Adrian Partl" in Confluence Cloud and insert an ADF mention node (when using the `adf` backend).
 - For non-ADF backends (e.g., HTML), it will render as plain text `@Adrian Partl`.
 
-Set the following environment variables for user lookup:
-- `CONFLUENCE_BASE_URL`
-- `CONFLUENCE_API_TOKEN`
-- `CONFLUENCE_USER_EMAIL`
+Set the following document attributes for user lookup:
+- `confluence-base-url`
+- `confluence-api-token`
+- `confluence-user-email`
+
+```bash
+asciidoctor -a confluence-base-url=https://yourcompany.atlassian.net \
+            -a confluence-api-token=your-api-token \
+            -a confluence-user-email=your.email@example.com \
+            -r ./src/jira_macro.rb yourfile.adoc
+```
 
 ---
 
@@ -224,8 +263,10 @@ asciidoctor -r ./src/adf_extensions.rb -b adf yourfile.adoc
 If you only want to use the macros (for example, with the standard HTML backend), you can load just the macro file(s):
 
 ```bash
-asciidoctor -r ./src/jira_macro.rb yourfile.adoc
+asciidoctor -r ./src/jira_macro.rb -a jira-base-url=https://jira.example.com yourfile.adoc
 asciidoctor -r ./src/appfox_workflows_macro.rb yourfile.adoc
+
+# For documentation on setting document attributes, see doc/document-attributes.md
 ```
 
 > **Note:**  
@@ -669,6 +710,87 @@ If the user is not found or credentials are missing, the macro outputs plain tex
   "text": "@Adrian Partl"
 }
 ```
+
+### Image Handling
+
+The converter includes smart image handling that detects image dimensions automatically and properly converts them to ADF format.
+
+#### Image Dimensions
+
+When including images in your AsciiDoc content, you can:
+
+1. **Specify dimensions explicitly** using width and height attributes:
+   ```adoc
+   image::diagram.png[Diagram,width=400,height=300]
+   ```
+
+2. **Let the converter detect dimensions automatically** from the image file:
+   ```adoc
+   image::diagram.png[Diagram]
+   ```
+
+3. **Specify only one dimension** and the converter will calculate the other to maintain the aspect ratio:
+   ```adoc
+   image::diagram.png[Diagram,width=400]
+   ```
+
+The converter supports:
+- Local image files (with automatic path resolution using `imagesdir` attribute)
+- Remote images (via HTTP/HTTPS URLs)
+- Both block images and inline images
+
+#### ADF Output
+
+Images are converted to ADF `mediaSingle` or `mediaInline` nodes with proper dimensions:
+
+```json
+{
+  "type": "mediaSingle",
+  "attrs": { "layout": "center" },
+  "content": [
+    {
+      "type": "media",
+      "attrs": {
+        "type": "file",
+        "id": "diagram.png",
+        "collection": "attachments",
+        "alt": "Diagram",
+        "occurrenceKey": "uuid",
+        "width": 400,
+        "height": 300
+      }
+    }
+  ]
+}
+```
+
+#### Path Resolution
+
+The converter primarily implements Asciidoctor's standard image resolution behavior:
+
+1. The raw path as specified in the document (in case it's already absolute)
+2. Relative to the document's base directory (where Asciidoctor was invoked)
+3. Combined with the `imagesdir` attribute if specified:
+   - Relative to base directory (base_dir + imagesdir + target)
+
+Additionally, if no `imagesdir` attribute is set, the converter checks for the common convention of having images in an 'images/' subdirectory of the base directory.
+
+This follows Asciidoctor's core principle: **image paths inside an included file are resolved relative to the base document that initiated the render process, not relative to the included file itself**.
+
+As the official Asciidoctor documentation explains:
+> "By default, the imagesdir value is empty. That means the images are resolved relative to the document."
+> "If the include directive is used in the primary (top-level) document, relative paths are resolved relative to the base directory."
+
+This ensures images are properly referenced regardless of:
+- Where the document is located in the directory structure
+- Whether the document includes other files
+- How deeply nested your document structure is
+
+The image handler provides useful diagnostics in the console output:
+- Shows key document attributes like `base_dir` and `imagesdir`
+- Lists exactly which paths were searched for each image
+- Indicates when and where an image is successfully found
+- Provides clear error messages when images cannot be located
 
 ### Literal/Source Code Blocks
 
