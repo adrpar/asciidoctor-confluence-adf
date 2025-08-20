@@ -579,6 +579,54 @@ def update_adf_media_ids(adf_json, filename_to_fileid):
     return updated_adf
 
 
+def update_adf_image_dimensions(adf_json, max_width):
+    """
+    Update image/media node widths and heights in ADF JSON, clamping width and adjusting height to keep aspect ratio.
+
+    Args:
+        adf_json (dict): The ADF JSON structure
+        max_width (int): Maximum allowed width for images (pixels)
+
+    Returns:
+        dict: Updated ADF JSON with clamped image dimensions
+    """
+    if not adf_json or not max_width:
+        return adf_json
+
+    def process_node_recursively(node):
+        if not isinstance(node, dict):
+            return
+
+        # Check for media/mediaInline nodes with width/height
+        if node.get("type") in ["media", "mediaInline", "mediaSingle"]:
+            attrs = node.get("attrs", {})
+            width = attrs.get("width")
+            height = attrs.get("height")
+            # Only clamp if width is set and greater than max_width
+            if width and isinstance(width, (int, float)) and width > max_width:
+                # If height is set, adjust to keep aspect ratio
+                if height and isinstance(height, (int, float)) and width > 0:
+                    aspect = height / width
+                    attrs["width"] = max_width
+                    attrs["height"] = int(round(max_width * aspect))
+                else:
+                    attrs["width"] = max_width
+                node["attrs"] = attrs
+
+        # Process all child nodes recursively
+        for key, value in node.items():
+            if isinstance(value, dict):
+                process_node_recursively(value)
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict):
+                        process_node_recursively(item)
+
+    updated_adf = adf_json.copy()
+    process_node_recursively(updated_adf)
+    return updated_adf
+
+
 def process_list_item_content(item_node, context, indent=""):
     """
     Process the content of a list item and format it for AsciiDoc.

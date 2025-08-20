@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from upload_to_confluence import main
 from confluence_client import ConfluenceClient
 from asciidoc_resources import extract_images_and_includes
-from adf_resources import update_adf_media_ids
+from adf_resources import update_adf_media_ids, update_adf_image_dimensions
 
 
 class TestUploadToConfluence:
@@ -404,6 +404,151 @@ image::another_image.jpg[Another Image]
         assert saved_patched_adf == patched_adf
 
         # Verify the patched ADF was used to update the page
+        mock_client.update_page_content.assert_called_once_with(
+            self.page_id, patched_adf
+        )
+        
+    @patch("upload_to_confluence.update_adf_media_ids")
+    @patch("upload_to_confluence.update_adf_image_dimensions")
+    @patch("upload_to_confluence.ConfluenceClient")
+    @patch("upload_to_confluence.extract_images_and_includes")
+    def test_max_image_width_parameter(
+        self, mock_extract, mock_client_class, mock_update_dimensions, mock_update_adf
+    ):
+        """Test that max_image_width parameter resizes images correctly."""
+        # Setup mocks
+        mock_client = mock_client_class.return_value
+        mock_client.create_empty_page.return_value = self.page_id
+        mock_client.get_page_attachments.return_value = []
+        file_id_mapping = {
+            "test_image.png": "new_file_id_1",
+            "another_image.jpg": "new_file_id_2",
+        }
+        mock_client.upload_images_to_confluence.return_value = file_id_mapping
+
+        # Create patched ADF results
+        patched_adf = {"type": "doc", "content": ["patched content"]}
+        resized_adf = {"type": "doc", "content": ["resized content"]}
+        
+        mock_update_adf.return_value = patched_adf
+        mock_update_dimensions.return_value = resized_adf
+
+        # Mock the extract_images_and_includes to populate the images list
+        def side_effect(path, images):
+            images.extend(["test_image.png", "another_image.jpg"])
+
+        mock_extract.side_effect = side_effect
+
+        # Call main with click context and max_image_width parameter
+        from click.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            [
+                "--base-url",
+                self.base_url,
+                "--asciidoc",
+                self.temp_asciidoc,
+                "--adf",
+                self.temp_adf,
+                "--space-id",
+                str(self.space_id),
+                "--title",
+                self.title,
+                "--username",
+                self.username,
+                "--api-token",
+                self.api_token,
+                "--page-id",
+                self.page_id,
+                "--max-image-width",
+                "800",
+            ],
+        )
+
+        # Verify extract_images_and_includes was called
+        mock_extract.assert_called_once()
+
+        # Verify update_adf_media_ids was called with correct parameters
+        mock_update_adf.assert_called_once()
+        
+        # Verify update_adf_image_dimensions was called with correct parameters
+        mock_update_dimensions.assert_called_once_with(patched_adf, 800)
+
+        # Read the patched ADF file
+        with open(self.temp_patched_adf, "r") as f:
+            saved_patched_adf = json.load(f)
+
+        # Verify the resized ADF was saved correctly
+        assert saved_patched_adf == resized_adf
+
+        # Verify the resized ADF was used to update the page
+        mock_client.update_page_content.assert_called_once_with(
+            self.page_id, resized_adf
+        )
+        
+    @patch("upload_to_confluence.update_adf_media_ids")
+    @patch("upload_to_confluence.update_adf_image_dimensions")
+    @patch("upload_to_confluence.ConfluenceClient")
+    @patch("upload_to_confluence.extract_images_and_includes")
+    def test_without_max_image_width_parameter(
+        self, mock_extract, mock_client_class, mock_update_dimensions, mock_update_adf
+    ):
+        """Test that without max_image_width, image dimensions are not modified."""
+        # Setup mocks
+        mock_client = mock_client_class.return_value
+        mock_client.create_empty_page.return_value = self.page_id
+        mock_client.get_page_attachments.return_value = []
+        file_id_mapping = {
+            "test_image.png": "new_file_id_1",
+            "another_image.jpg": "new_file_id_2",
+        }
+        mock_client.upload_images_to_confluence.return_value = file_id_mapping
+
+        # Create patched ADF result
+        patched_adf = {"type": "doc", "content": ["patched content"]}
+        mock_update_adf.return_value = patched_adf
+
+        # Mock the extract_images_and_includes to populate the images list
+        def side_effect(path, images):
+            images.extend(["test_image.png", "another_image.jpg"])
+
+        mock_extract.side_effect = side_effect
+
+        # Call main with click context without max_image_width parameter
+        from click.testing import CliRunner
+
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            [
+                "--base-url",
+                self.base_url,
+                "--asciidoc",
+                self.temp_asciidoc,
+                "--adf",
+                self.temp_adf,
+                "--space-id",
+                str(self.space_id),
+                "--title",
+                self.title,
+                "--username",
+                self.username,
+                "--api-token",
+                self.api_token,
+                "--page-id",
+                self.page_id,
+            ],
+        )
+
+        # Verify update_adf_media_ids was called
+        mock_update_adf.assert_called_once()
+        
+        # Verify update_adf_image_dimensions was NOT called
+        mock_update_dimensions.assert_not_called()
+
+        # Verify the original patched ADF (without resizing) was used to update the page
         mock_client.update_page_content.assert_called_once_with(
             self.page_id, patched_adf
         )
