@@ -32,7 +32,7 @@ class ConfluenceJiraClient
           nil
         end
       else
-        warn ">>> WARN: Failed to query Confluence user: #{res.code} #{res.message}"
+        warn ">>> WARN: Failed to query Confluence user: #{uri.to_s} -> #{res.code} #{res.message}"
         nil
       end
     rescue => e
@@ -61,7 +61,7 @@ class ConfluenceJiraClient
         data = JSON.parse(res.body)
         { success: true, data: data }
       else
-        { success: false, error: "Jira API query failed: #{res.code} #{res.body}" }
+        { success: false, error: "Jira API query failed: #{uri.to_s} -> #{res.code} #{res.body}" }
       end
     rescue => e
       { success: false, error: "Failed to query Jira: #{e}" }
@@ -84,7 +84,7 @@ class ConfluenceJiraClient
         fields = JSON.parse(res.body)
         { success: true, fields: fields }
       else
-        { success: false, error: "Failed to get Jira fields: #{res.code} #{res.body}" }
+        { success: false, error: "Failed to get Jira fields: #{uri.to_s} -> #{res.code} #{res.body}" }
       end
     rescue => e
       { success: false, error: "Error fetching Jira fields: #{e}" }

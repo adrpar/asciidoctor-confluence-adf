@@ -44,7 +44,7 @@ class AtlasMentionInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
 
       if confluence_base_url.nil? || api_token.nil? || user_email.nil?
         warn ">>> WARN: Missing Confluence API credentials for atlasMention macro."
-        return { "type" => "text", "text" => "@#{name}" }
+        return { "type" => "text", "text" => "@#{name}" }.to_json
       end
 
       client = ConfluenceJiraClient.new(
