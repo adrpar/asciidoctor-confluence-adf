@@ -4,6 +4,22 @@
 
 This converter transforms AsciiDoc documents into Atlassian Document Format (ADF), enabling seamless integration with Atlassian tools like Confluence.
 
+> ⚠️ **CRITICAL WARNING** ⚠️
+> 
+> Asciidoctor document headers **MUST NOT** contain blank lines between attribute declarations. 
+> This is especially important for included files that set attributes such as `:imagesdir:`.
+>
+> If blank lines are present, attribute processing may fail silently, causing features like image resolution to break.
+>
+> **Example of correct header format:**
+> ```asciidoc
+> = Document Title
+> :toc-title: Table of Contents
+> :imagesdir: images
+> :icons: font
+> // No blank lines between attributes!
+> ```
+
 ## Features
 
 - Converts AsciiDoc elements (e.g., paragraphs, lists, tables) into ADF-compliant JSON.
@@ -669,6 +685,100 @@ If the user is not found or credentials are missing, the macro outputs plain tex
   "text": "@Adrian Partl"
 }
 ```
+
+### Image Handling
+
+The converter includes smart image handling that detects image dimensions automatically and properly converts them to ADF format.
+
+#### Image Dimensions
+
+When including images in your AsciiDoc content, you can:
+
+1. **Specify dimensions explicitly** using width and height attributes:
+   ```adoc
+   image::diagram.png[Diagram,width=400,height=300]
+   ```
+
+2. **Let the converter detect dimensions automatically** from the image file:
+   ```adoc
+   image::diagram.png[Diagram]
+   ```
+
+3. **Specify only one dimension** and the converter will calculate the other to maintain the aspect ratio:
+   ```adoc
+   image::diagram.png[Diagram,width=400]
+   ```
+
+The converter supports:
+- Local image files (with automatic path resolution using `imagesdir` attribute)
+- Remote images (via HTTP/HTTPS URLs)
+- Both block images and inline images
+
+#### ADF Output
+
+Images are converted to ADF `mediaSingle` or `mediaInline` nodes with proper dimensions:
+
+```json
+{
+  "type": "mediaSingle",
+  "attrs": { "layout": "center" },
+  "content": [
+    {
+      "type": "media",
+      "attrs": {
+        "type": "file",
+        "id": "diagram.png",
+        "collection": "attachments",
+        "alt": "Diagram",
+        "occurrenceKey": "uuid",
+        "width": 400,
+        "height": 300
+      }
+    }
+  ]
+}
+```
+
+#### Path Resolution
+
+The converter follows Asciidoctor's fundamental principles for image resolution:
+
+1. The raw path as specified in the document (in case it's already absolute)
+2. Relative to the document's base directory (where Asciidoctor was invoked)
+3. Relative to the "images" directory under the base directory (following the common AsciiDoc convention)
+
+This aligns with Asciidoctor's core principle: **image paths inside an included file are resolved relative to the base document that initiated the render process, not relative to the included file itself**.
+
+> ⚠️ **IMPORTANT NOTE ABOUT IMAGE RESOLUTION** ⚠️
+> 
+> If you're defining `:imagesdir:` in an included file (like a config.adoc), make sure there are **NO BLANK LINES** in the header section of your document. 
+> Asciidoctor's attribute processing is sensitive to document structure, and blank lines can cause attributes like `:imagesdir:` to be silently ignored.
+>
+> The converter automatically checks for images in an "images" directory under the base directory as a fallback, but proper attribute handling is preferred.
+>
+> **Example for config.adoc:**
+> ```asciidoc
+> // asciidoc settings
+> :toc-title: Table of Contents
+> :toc:
+> :imagesdir: images
+> // NO BLANK LINES between attributes!
+> ```
+
+As the official Asciidoctor documentation explains:
+> "By default, the imagesdir value is empty. That means the images are resolved relative to the document."
+> "If the include directive is used in the primary (top-level) document, relative paths are resolved relative to the base directory."
+
+This ensures images are properly referenced regardless of:
+- Where the document is located in the directory structure
+- Whether the document includes other files
+- How deeply nested your document structure is
+
+The image handler provides useful diagnostics in the console output:
+- Shows key document attributes like `base_dir` and `imagesdir`
+- Lists exactly which paths were searched for each image
+- Indicates when and where an image is successfully found
+- Provides clear error messages when images cannot be located
 
 ### Literal/Source Code Blocks
 

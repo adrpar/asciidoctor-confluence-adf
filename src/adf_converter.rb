@@ -2,8 +2,10 @@ require 'asciidoctor'
 require 'json'
 require 'securerandom'
 require 'cgi'
+require_relative 'image_handler'
 
 class AdfConverter < Asciidoctor::Converter::Base
+  include ImageHandler
   register_for 'adf'
 
   DEFAULT_MARK_BACKGROUND_COLOR = '#FFFF00' # yellow
@@ -227,42 +229,9 @@ class AdfConverter < Asciidoctor::Converter::Base
     }
   end
 
-  def convert_image(node)
-    self.node_list << {
-      "type" => "mediaSingle",
-      "attrs" => { "layout" => "center" },
-      "content" => [
-        {
-          "type" => "media",
-          "attrs" => {
-            "type" => "file",
-            "id" => node.attr('target'),
-            "collection" => "attachments",
-            "alt" => node.attr('alt') || "",
-            "occurrenceKey" => node.attr('occurrenceKey') || SecureRandom.uuid,
-            "width" => node.attr('width')&.to_i,
-            "height" => node.attr('height')&.to_i
-          }.compact
-        }
-      ]
-    }
-  end
+  # Image handling methods are now included from the ImageHandler module
 
-  def convert_inline_image(node)
-    {
-      "type" => "mediaInline",
-      "attrs" => {
-        "type" => "file",
-        "id" => node.target || "unknown-id",
-        "collection" => "attachments",
-        "alt" => node.attr('alt') || "",
-        "occurrenceKey" => node.attr('occurrenceKey') || SecureRandom.uuid,
-        "width" => node.attr('width')&.to_i,
-        "height" => node.attr('height')&.to_i,
-        "data" => node.attr('data') || {}
-      }.compact
-    }.to_json
-  end
+  # Image conversion methods are now included from the ImageHandler module
 
   def convert_admonition(node)
     panel_type = ADMONITION_TYPE_MAPPING[node.attr('name')] || "info" # Default to "info" if type is unknown
