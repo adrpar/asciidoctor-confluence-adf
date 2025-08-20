@@ -12,7 +12,7 @@ class JiraInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
   name_positional_attributes 'text'
 
   def process parent, target, attrs
-    base_url = ENV['JIRA_BASE_URL']
+    base_url = parent.document.attributes['jira-base-url']
     if base_url.nil? || base_url.empty?
       warn ">>> WARN: No Jira base URL found, the Jira extension may not work as expected."
       if attrs['text']
@@ -37,10 +37,11 @@ class AtlasMentionInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
   def process parent, target, attrs
     name = target.tr('_', ' ')
     if parent.document.converter && parent.document.converter.backend == 'adf'
-      confluence_base_url = ENV['CONFLUENCE_BASE_URL']
-      jira_base_url = ENV['JIRA_BASE_URL'] || confluence_base_url
-      api_token = ENV['CONFLUENCE_API_TOKEN']
-      user_email = ENV['CONFLUENCE_USER_EMAIL']
+      confluence_base_url = parent.document.attributes['confluence-base-url']
+      jira_base_url = parent.document.attributes['jira-base-url'] || confluence_base_url
+      api_token = parent.document.attributes['confluence-api-token']
+      user_email = parent.document.attributes['confluence-user-email']
+
 
       if confluence_base_url.nil? || api_token.nil? || user_email.nil?
         warn ">>> WARN: Missing Confluence API credentials for atlasMention macro."
