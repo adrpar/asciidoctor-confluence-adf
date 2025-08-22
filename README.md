@@ -38,6 +38,17 @@ This converter transforms AsciiDoc documents into Atlassian Document Format (ADF
 > As a result, some code may reflect an iterative or "vibe coding" style.  
 > The codebase will be gradually cleaned up and refactored for clarity and maintainability.
 
+## Configuration
+
+This project uses document attributes for configuration. Document attributes can be set:
+- In your AsciiDoc file header
+- Via command line with `-a attribute=value`
+
+See [document-attributes.md](./doc/document-attributes.md) for detailed documentation.
+
+> **Warning:**  
+> Be careful about blank lines in your AsciiDoc document header. Any blank line signals the end of the header, which means document attributes defined after that blank line will not be processed correctly.
+
 ---
 
 ## Macro Support
@@ -56,7 +67,19 @@ jira:ISSUE-456[Custom link text]
 - The macro will render as a link to the specified Jira issue.
 - You can optionally provide custom link text in the brackets.
 
-Set the `JIRA_BASE_URL` environment variable to control the link target.
+Set the `jira-base-url` document attribute to control the link target:
+
+```adoc
+= Document Title
+:jira-base-url: https://jira.example.com
+
+See jira:PROJECT-123[] for details.
+```
+
+You can also set it via command line:
+```bash
+asciidoctor -a jira-base-url=https://jira.example.com -r ./src/jira_macro.rb yourfile.adoc
+```
 
 ---
 
@@ -84,10 +107,19 @@ The macro will:
 3. Automatically format rich content in fields like description (including bullet lists, bold text, etc.)
 4. Create links to the Jira issues
 
-**Environment Variables:**
-- `JIRA_BASE_URL`: Base URL of your Jira instance
-- `CONFLUENCE_API_TOKEN`: API token for Jira authentication
-- `CONFLUENCE_USER_EMAIL`: Email for Jira authentication
+**Document Attributes:**
+- `jira-base-url`: Base URL of your Jira instance
+- `confluence-api-token`: API token for Jira authentication
+- `confluence-user-email`: Email for Jira authentication
+
+Set these document attributes either in your AsciiDoc file header or via command line:
+
+```bash
+asciidoctor -a jira-base-url=https://jira.example.com \
+            -a confluence-api-token=your-token \
+            -a confluence-user-email=your.email@example.com \
+            -r ./src/jira_macro.rb yourfile.adoc
+```
 
 **Note:** The converter handles complex formatting in Jira fields differently based on the backend:
 - With HTML backend: Renders description fields with AsciiDoc formatting preserved
@@ -106,10 +138,17 @@ atlasMention:Adrian_Partl[]
 - The macro will look up the user "Adrian Partl" in Confluence Cloud and insert an ADF mention node (when using the `adf` backend).
 - For non-ADF backends (e.g., HTML), it will render as plain text `@Adrian Partl`.
 
-Set the following environment variables for user lookup:
-- `CONFLUENCE_BASE_URL`
-- `CONFLUENCE_API_TOKEN`
-- `CONFLUENCE_USER_EMAIL`
+Set the following document attributes for user lookup:
+- `confluence-base-url`
+- `confluence-api-token`
+- `confluence-user-email`
+
+```bash
+asciidoctor -a confluence-base-url=https://yourcompany.atlassian.net \
+            -a confluence-api-token=your-api-token \
+            -a confluence-user-email=your.email@example.com \
+            -r ./src/jira_macro.rb yourfile.adoc
+```
 
 ---
 
@@ -240,8 +279,10 @@ asciidoctor -r ./src/adf_extensions.rb -b adf yourfile.adoc
 If you only want to use the macros (for example, with the standard HTML backend), you can load just the macro file(s):
 
 ```bash
-asciidoctor -r ./src/jira_macro.rb yourfile.adoc
+asciidoctor -r ./src/jira_macro.rb -a jira-base-url=https://jira.example.com yourfile.adoc
 asciidoctor -r ./src/appfox_workflows_macro.rb yourfile.adoc
+
+# For documentation on setting document attributes, see doc/document-attributes.md
 ```
 
 > **Note:**  
