@@ -25,11 +25,16 @@ You can set document attributes in your AsciiDoc file header:
 = Document Title
 :jira-base-url: https://jira.example.com
 :confluence-base-url: https://confluence.example.com
+// WARNING: CONSIDER SECURITY IMPLICATIONS BEFORE ADDING CREDENTIALS DIRECTLY IN FILES
 :confluence-api-token: your-api-token
 :confluence-user-email: your.email@example.com
 
 Your document content starts here...
 ```
+
+> **Security Warning:**  
+> Storing access tokens directly in files poses a security risk. Prefer passing sensitive credentials through the command line to prevent accidental exposure in version control systems, logs, or shared documents.
+
 
 > **Warning:**  
 > Be careful about blank lines in your AsciiDoc document header. Any blank line signals the end of the header, which means document attributes defined after that blank line will not be processed correctly.
