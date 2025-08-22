@@ -121,6 +121,9 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def convert_table(node)
+  # Ensure downstream parsing (e.g., AsciiDoc cells) has access to the current document context
+  previous_document = @current_document
+  @current_document = node.document
     table_content = [
       *convert_table_head_rows(node.rows[:head]),
       *convert_table_body_rows(node.rows[:body])
@@ -132,6 +135,9 @@ class AdfConverter < Asciidoctor::Converter::Base
     }
     
     self.node_list << table_node
+  ensure
+    # Restore previous document context
+    @current_document = previous_document
   end
 
   def convert_table_head_rows(head_rows)
@@ -177,9 +183,15 @@ class AdfConverter < Asciidoctor::Converter::Base
       
       # Check if blocks are empty but text is present - common case with a| cells
       if (cell.blocks.empty? || cell.blocks.nil?) && !cell.text.empty?
-        # Parse the text content into blocks
-        # We'll use a temporary document to parse the AsciiDoc content
-        cell_doc = Asciidoctor.load(cell.text, safe: :safe, backend: 'adf')
+        # Parse the text content into blocks using a temporary document, but
+        # propagate the parent document context (attributes, base_dir, safe mode)
+        load_opts = {
+          safe: (@current_document&.safe || :safe),
+          backend: 'adf',
+          attributes: (@current_document ? @current_document.attributes.dup : {}),
+          base_dir: (@current_document&.base_dir)
+        }.compact
+        cell_doc = Asciidoctor.load(cell.text, **load_opts)
         
         cell_doc.blocks.each do |block|
           convert(block)
