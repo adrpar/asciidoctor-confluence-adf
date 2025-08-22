@@ -762,7 +762,7 @@ Images are converted to ADF `mediaSingle` or `mediaInline` nodes with proper dim
 ```json
 {
   "type": "mediaSingle",
-  "attrs": { "layout": "center" },
+  "attrs": { "layout": "wide" },
   "content": [
     {
       "type": "media",

@@ -135,7 +135,7 @@ module ImageHandler
     # Build the node with the dimensions
     self.node_list << {
       "type" => "mediaSingle",
-      "attrs" => { "layout" => "center" },
+      "attrs" => { "layout" => "wide" },
       "content" => [
         {
           "type" => "media",
