@@ -86,25 +86,41 @@ class JiraMacroTest < Minitest::Test
   end
   
   # Helper for loading and converting documents with the JiraIssuesTableBlockMacro
-  def load_and_convert_jira_table(adoc_content, backend = 'html5')
+  def load_and_convert_jira_table(adoc_content, backend = 'html5', attributes = {})
     doc = Asciidoctor.load(
       adoc_content, 
       safe: :safe, 
       backend: backend,
-      extensions: proc { block_macro JiraIssuesTableBlockMacro }
+      extensions: proc { block_macro JiraIssuesTableBlockMacro },
+      attributes: attributes
     )
     doc.convert
   end
   
   # Helper for loading and converting documents with the JiraInlineMacro
-  def load_and_convert_jira_links(adoc_content, backend = 'html5')
+  def load_and_convert_jira_links(adoc_content, backend = 'html5', attributes = {})
     doc = Asciidoctor.load(
       adoc_content, 
       safe: :safe, 
       backend: backend,
-      extensions: proc { inline_macro JiraInlineMacro }
+      extensions: proc { inline_macro JiraInlineMacro },
+      attributes: attributes
     )
     doc.convert
+  end
+  
+  # Test setting attributes via command-line style attributes parameter
+  def test_jira_macro_with_command_line_attributes
+    ENV.delete('JIRA_BASE_URL')
+    
+    html = load_and_convert_jira_links(
+      asciidoc_with_macros, 
+      'html5', 
+      { 'jira-base-url' => 'https://cli-example.com' }
+    )
+    
+    assert_includes html, '<a href="https://cli-example.com/browse/ISSUE-123">ISSUE-123</a>'
+    assert_includes html, '<a href="https://cli-example.com/browse/ISSUE-456">Custom link text</a>'
   end
 
   # Original test methods, now using the helpers
@@ -121,6 +137,21 @@ class JiraMacroTest < Minitest::Test
 
     assert_includes html, '<a href="https://jira.example.com/browse/ISSUE-123">ISSUE-123</a>'
     assert_includes html, '<a href="https://jira.example.com/browse/ISSUE-456">Custom link text</a>'
+  end
+  
+  def test_jira_macro_with_document_attribute
+    ENV.delete('JIRA_BASE_URL')
+    adoc = <<~ADOC
+      :jira-base-url: https://company.atlassian.net
+      
+      jira:ISSUE-123[]
+      jira:ISSUE-456[Custom link text]
+    ADOC
+    
+    html = load_and_convert_jira_links(adoc)
+    
+    assert_includes html, '<a href="https://company.atlassian.net/browse/ISSUE-123">ISSUE-123</a>'
+    assert_includes html, '<a href="https://company.atlassian.net/browse/ISSUE-456">Custom link text</a>'
   end
 
   def test_jira_macro_without_base_url
@@ -153,6 +184,78 @@ class JiraMacroTest < Minitest::Test
 
     html = load_and_convert_jira_table('jiraIssuesTable::"project = DEMO ORDER BY created DESC"[fields="key,summary,status"]')
     assert_includes html, 'jiraIssuesTable::"project = DEMO ORDER BY created DESC"[fields="key,summary,status"]'
+  end
+  
+  def test_jira_issues_table_macro_with_document_attributes
+    ENV.delete('JIRA_BASE_URL')
+    ENV.delete('CONFLUENCE_API_TOKEN')
+    ENV.delete('CONFLUENCE_USER_EMAIL')
+    
+    adoc = <<~ADOC
+      :jira-base-url: https://company.atlassian.net
+      :confluence-api-token: test-token
+      :confluence-user-email: test@example.com
+      
+      jiraIssuesTable::"project = DEMO ORDER BY created DESC"[fields="key,summary,status"]
+    ADOC
+    
+    Net::HTTP.stub :start, mock_api_responses(basic_jira_issues) do
+      html = load_and_convert_jira_table(adoc)
+      
+      assert_includes html, 'DEMO-1'
+      assert_includes html, 'First issue'
+      assert_includes html, 'To Do'
+      assert_includes html, 'DEMO-2'
+      assert_includes html, 'Second issue'
+      assert_includes html, 'In Progress'
+    end
+  end
+  
+  # Test that document attributes take precedence over environment variables
+  def test_jira_issues_table_macro_attributes_precedence
+    ENV['JIRA_BASE_URL'] = 'https://env-example.com'
+    ENV['CONFLUENCE_API_TOKEN'] = 'env-token'
+    ENV['CONFLUENCE_USER_EMAIL'] = 'env@example.com'
+    
+    adoc = <<~ADOC
+      :jira-base-url: https://attr-example.com
+      :confluence-api-token: attr-token
+      :confluence-user-email: attr@example.com
+      
+      jiraIssuesTable::"project = DEMO"[fields="key,summary,status"]
+    ADOC
+    
+    # Create mock for HTTP requests to verify correct URLs are used
+    mock_response = Struct.new(:code, :body) do
+      def is_a?(klass)
+        klass == Net::HTTPSuccess
+      end
+    end
+    
+    http_mock = Minitest::Mock.new
+    
+    # Expect requests to the attribute URL, not the ENV URL
+    http_mock.expect(:request, mock_response.new('200', basic_jira_issues.to_json)) do |req|
+      req.path.include?('/search') && req['Authorization'].include?('attr-token')
+    end
+    
+    http_mock.expect(:request, mock_response.new('200', standard_fields.to_json)) do |req|
+      req.path.include?('/field')
+    end
+    
+    Net::HTTP.stub :start, ->(host, port, options = {}, &block) { 
+      assert_equal 'attr-example.com', host, "Should use the host from document attributes"
+      block.call(http_mock) 
+    } do
+      html = load_and_convert_jira_table(adoc)
+      
+      # Basic verification that the table was rendered
+      assert_includes html, 'key'
+      assert_includes html, 'summary' 
+      assert_includes html, 'status'
+    end
+    
+    http_mock.verify
   end
 
   def test_jira_issues_table_macro_with_complex_formatting
@@ -562,6 +665,38 @@ def test_atlas_mention_macro_missing_credentials
 
   # Verify fallback behavior
   assert_includes html, "@John Doe"
+end
+
+def test_atlas_mention_macro_with_document_attributes
+  ENV.delete('CONFLUENCE_BASE_URL')
+  ENV.delete('CONFLUENCE_API_TOKEN')
+  ENV.delete('CONFLUENCE_USER_EMAIL')
+  
+  adoc_content = <<~ADOC
+    :confluence-base-url: https://company.atlassian.net
+    :confluence-api-token: test-token
+    :confluence-user-email: test@example.com
+    
+    atlasMention:John_Doe[]
+  ADOC
+  
+  # Mock the ConfluenceJiraClient to return a user
+  mock_client = Minitest::Mock.new
+  mock_client.expect(:find_user_by_fullname, { "id" => "12345", "displayName" => "John Doe" }, ["John Doe"])
+  
+  ConfluenceJiraClient.stub :new, mock_client do
+    doc = Asciidoctor.load(adoc_content, safe: :safe, backend: 'adf', extensions: proc { inline_macro AtlasMentionInlineMacro })
+    adf_json = doc.converter.convert(doc, 'document')
+
+    # Parse the ADF output
+    adf_data = JSON.parse(adf_json)
+
+    # Verify the mention node
+    mention_node = adf_data["content"].find { |node| node["type"] == "mention" }
+    assert mention_node, "Should contain a mention node"
+    assert_equal "12345", mention_node["attrs"]["id"]
+    assert_equal "@John Doe", mention_node["attrs"]["text"]
+  end
 end
 
 def test_atlas_mention_macro_user_not_found
