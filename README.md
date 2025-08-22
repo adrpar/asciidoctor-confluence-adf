@@ -891,3 +891,8 @@ Contributions are welcome! Please follow these steps to contribute:
 ## License
 
 This project is licensed under the MIT License. See the LICENSE file for more details.
+
+## Documentation
+
+- [Document Attributes](./doc/document-attributes.md): Detailed documentation on configuring document attributes
+- [Gradle Integration Guide](./doc/gradle-integration.md): How to run the converter in a Gradle build
