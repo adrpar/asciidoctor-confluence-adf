@@ -4,6 +4,22 @@
 
 This converter transforms AsciiDoc documents into Atlassian Document Format (ADF), enabling seamless integration with Atlassian tools like Confluence.
 
+> ⚠️ **CRITICAL WARNING** ⚠️
+> 
+> Asciidoctor document headers **MUST NOT** contain blank lines between attribute declarations. 
+> This is especially important for included files that set attributes such as `:imagesdir:`.
+>
+> If blank lines are present, attribute processing may fail silently, causing features like image resolution to break.
+>
+> **Example of correct header format:**
+> ```asciidoc
+> = Document Title
+> :toc-title: Table of Contents
+> :imagesdir: images
+> :icons: font
+> // No blank lines between attributes!
+> ```
+
 ## Features
 
 - Converts AsciiDoc elements (e.g., paragraphs, lists, tables) into ADF-compliant JSON.
@@ -746,7 +762,7 @@ Images are converted to ADF `mediaSingle` or `mediaInline` nodes with proper dim
 ```json
 {
   "type": "mediaSingle",
-  "attrs": { "layout": "center" },
+  "attrs": { "layout": "wide" },
   "content": [
     {
       "type": "media",
@@ -766,16 +782,29 @@ Images are converted to ADF `mediaSingle` or `mediaInline` nodes with proper dim
 
 #### Path Resolution
 
-The converter primarily implements Asciidoctor's standard image resolution behavior:
+The converter follows Asciidoctor's fundamental principles for image resolution:
 
 1. The raw path as specified in the document (in case it's already absolute)
 2. Relative to the document's base directory (where Asciidoctor was invoked)
-3. Combined with the `imagesdir` attribute if specified:
-   - Relative to base directory (base_dir + imagesdir + target)
+3. Relative to the "images" directory under the base directory (following the common AsciiDoc convention)
 
-Additionally, if no `imagesdir` attribute is set, the converter checks for the common convention of having images in an 'images/' subdirectory of the base directory.
+This aligns with Asciidoctor's core principle: **image paths inside an included file are resolved relative to the base document that initiated the render process, not relative to the included file itself**.
 
-This follows Asciidoctor's core principle: **image paths inside an included file are resolved relative to the base document that initiated the render process, not relative to the included file itself**.
+> ⚠️ **IMPORTANT NOTE ABOUT IMAGE RESOLUTION** ⚠️
+> 
+> If you're defining `:imagesdir:` in an included file (like a config.adoc), make sure there are **NO BLANK LINES** in the header section of your document. 
+> Asciidoctor's attribute processing is sensitive to document structure, and blank lines can cause attributes like `:imagesdir:` to be silently ignored.
+>
+> The converter automatically checks for images in an "images" directory under the base directory as a fallback, but proper attribute handling is preferred.
+>
+> **Example for config.adoc:**
+> ```asciidoc
+> // asciidoc settings
+> :toc-title: Table of Contents
+> :toc:
+> :imagesdir: images
+> // NO BLANK LINES between attributes!
+> ```
 
 As the official Asciidoctor documentation explains:
 > "By default, the imagesdir value is empty. That means the images are resolved relative to the document."
@@ -862,3 +891,8 @@ Contributions are welcome! Please follow these steps to contribute:
 ## License
 
 This project is licensed under the MIT License. See the LICENSE file for more details.
+
+## Documentation
+
+- [Document Attributes](./doc/document-attributes.md): Detailed documentation on configuring document attributes
+- [Gradle Integration Guide](./doc/gradle-integration.md): How to run the converter in a Gradle build

@@ -473,7 +473,11 @@ class AdfConverterTest < Minitest::Test
       "content" => [
         {
           "type" => "mediaSingle",
-          "attrs" => {"layout" => "center"},
+          "attrs" => {
+            "layout" => "wide",
+            "width" => 300,
+            "widthType" => "pixel"
+          },
           "content" => [
             {
               "type" => "media",

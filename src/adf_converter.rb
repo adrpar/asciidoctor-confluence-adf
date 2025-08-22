@@ -2,8 +2,10 @@ require 'asciidoctor'
 require 'json'
 require 'securerandom'
 require 'cgi'
+require_relative 'image_handler'
 
 class AdfConverter < Asciidoctor::Converter::Base
+  include ImageHandler
   register_for 'adf'
 
   DEFAULT_MARK_BACKGROUND_COLOR = '#FFFF00' # yellow
@@ -119,6 +121,9 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def convert_table(node)
+  # Ensure downstream parsing (e.g., AsciiDoc cells) has access to the current document context
+  previous_document = @current_document
+  @current_document = node.document
     table_content = [
       *convert_table_head_rows(node.rows[:head]),
       *convert_table_body_rows(node.rows[:body])
@@ -130,6 +135,9 @@ class AdfConverter < Asciidoctor::Converter::Base
     }
     
     self.node_list << table_node
+  ensure
+    # Restore previous document context
+    @current_document = previous_document
   end
 
   def convert_table_head_rows(head_rows)
@@ -175,9 +183,15 @@ class AdfConverter < Asciidoctor::Converter::Base
       
       # Check if blocks are empty but text is present - common case with a| cells
       if (cell.blocks.empty? || cell.blocks.nil?) && !cell.text.empty?
-        # Parse the text content into blocks
-        # We'll use a temporary document to parse the AsciiDoc content
-        cell_doc = Asciidoctor.load(cell.text, safe: :safe, backend: 'adf')
+        # Parse the text content into blocks using a temporary document, but
+        # propagate the parent document context (attributes, base_dir, safe mode)
+        load_opts = {
+          safe: (@current_document&.safe || :safe),
+          backend: 'adf',
+          attributes: (@current_document ? @current_document.attributes.dup : {}),
+          base_dir: (@current_document&.base_dir)
+        }.compact
+        cell_doc = Asciidoctor.load(cell.text, **load_opts)
         
         cell_doc.blocks.each do |block|
           convert(block)
@@ -227,42 +241,9 @@ class AdfConverter < Asciidoctor::Converter::Base
     }
   end
 
-  def convert_image(node)
-    self.node_list << {
-      "type" => "mediaSingle",
-      "attrs" => { "layout" => "center" },
-      "content" => [
-        {
-          "type" => "media",
-          "attrs" => {
-            "type" => "file",
-            "id" => node.attr('target'),
-            "collection" => "attachments",
-            "alt" => node.attr('alt') || "",
-            "occurrenceKey" => node.attr('occurrenceKey') || SecureRandom.uuid,
-            "width" => node.attr('width')&.to_i,
-            "height" => node.attr('height')&.to_i
-          }.compact
-        }
-      ]
-    }
-  end
+  # Image handling methods are now included from the ImageHandler module
 
-  def convert_inline_image(node)
-    {
-      "type" => "mediaInline",
-      "attrs" => {
-        "type" => "file",
-        "id" => node.target || "unknown-id",
-        "collection" => "attachments",
-        "alt" => node.attr('alt') || "",
-        "occurrenceKey" => node.attr('occurrenceKey') || SecureRandom.uuid,
-        "width" => node.attr('width')&.to_i,
-        "height" => node.attr('height')&.to_i,
-        "data" => node.attr('data') || {}
-      }.compact
-    }.to_json
-  end
+  # Image conversion methods are now included from the ImageHandler module
 
   def convert_admonition(node)
     panel_type = ADMONITION_TYPE_MAPPING[node.attr('name')] || "info" # Default to "info" if type is unknown
