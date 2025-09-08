@@ -205,7 +205,7 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
   end
 
   def handle_failed_api_query(parent, target, attrs, result)
-    warn ">>> WARN: Jira API query failed or returned no issues: #{result[:message] || 'Unknown error'}"
+    warn ">>> WARN: Jira API query failed or returned no issues: #{result[:error] || 'Unknown error'}"
     create_paragraph(parent, "jiraIssuesTable::#{target}[fields=\"#{attrs['fields']}\"]", {})
   end
 
