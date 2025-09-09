@@ -47,6 +47,9 @@ class AdfConverter < Asciidoctor::Converter::Base
     when 'toc' then convert_toc(node)
     when 'literal' then convert_literal(node)
     when 'pass' then convert_pass(node)
+    when 'sidebar' then convert_sidebar(node)
+    when 'floating_title' then convert_floating_title(node)
+    when 'thematic_break' then convert_thematic_break(node)
     else
       super
     end
@@ -271,6 +274,24 @@ class AdfConverter < Asciidoctor::Converter::Base
 
   def convert_embedded(node)
     ""
+  end
+
+  # Sidebar blocks are currently ignored (no-op)
+  def convert_sidebar(node)
+    # intentionally left blank
+    nil
+  end
+
+  # Floating titles are currently ignored (no-op)
+  def convert_floating_title(node)
+    # intentionally left blank
+    nil
+  end
+
+  # Thematic breaks are currently ignored (no-op)
+  def convert_thematic_break(node)
+    # intentionally left blank
+    nil
   end
 
   def convert_toc(node)

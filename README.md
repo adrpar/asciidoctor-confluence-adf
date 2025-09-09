@@ -89,7 +89,7 @@ The **Jira issues table macro** allows you to embed query results from Jira dire
 
 **Usage:**
 ```adoc
-jiraIssuesTable::["project = DEMO", fields="key,summary,description,status"]
+jiraIssuesTable::['project = "DEMO"', fields='key,summary,description,status']
 ```
 
 **Parameters:**
@@ -98,7 +98,7 @@ jiraIssuesTable::["project = DEMO", fields="key,summary,description,status"]
 
 **Example with more options:**
 ```adoc
-jiraIssuesTable::["project = PRQ AND status = Review", fields="key,summary,description,customfield_10984,status"]
+jiraIssuesTable::['project = "PRQ" AND status = Review', fields='key,summary,description,customfield_10984,status']
 ```
 
 The macro will:
@@ -246,7 +246,7 @@ appfoxWorkflowMetadata:status[]
 workflowApproval:all[]
 workflowChangeTable:[]
 
-jiraIssuesTable::["project = DEMO", fields="key,summary,status"]
+jiraIssuesTable::['project = "DEMO"', fields='key,summary,status']
 ADOC
 
 output = Asciidoctor.convert(adoc, backend: 'adf', safe: :safe, header_footer: false)
@@ -543,7 +543,7 @@ ADF Output:
 ### Jira Issues Table Macro
 AsciiDoc:
 ```adoc
-jiraIssuesTable::["project = DEMO", fields="key,summary,description,status"]
+jiraIssuesTable::['project = "DEMO"', fields='key,summary,description,status']
 ```
 
 ADF Output:
