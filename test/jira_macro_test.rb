@@ -616,6 +616,61 @@ class JiraMacroTest < Minitest::Test
       assert_includes html, 'To Do'
     end
   end
+
+  def test_jira_issues_table_with_adf_description
+    setup_jira_env
+
+    adf_description = {
+      "version" => 1,
+      "type" => "doc",
+      "content" => [
+        {
+          "type" => "paragraph",
+          "content" => [
+            { "type" => "text", "text" => "This is a description in ADF." }
+          ]
+        },
+        {
+          "type" => "bulletList",
+          "content" => [
+            {
+              "type" => "listItem",
+              "content" => [
+                {
+                  "type" => "paragraph",
+                  "content" => [
+                    { "type" => "text", "text" => "ADF Item 1" }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+
+    issues_with_adf = {
+      "issues" => [
+        {
+          "key" => "DEMO-3",
+          "fields" => {
+            "summary" => "ADF Description",
+            "status" => { "name" => "Done" },
+            "description" => adf_description
+          }
+        }
+      ]
+    }
+
+    Net::HTTP.stub :start, mock_api_responses(issues_with_adf) do
+    html = load_and_convert_jira_table('jiraIssuesTable::["project = DEMO", fields="key,summary,description,status"]')
+
+  # Accept both legacy expected snippet (without content wrapper) and current Asciidoctor output (with wrapper)
+  assert_includes html, 'This is a description in ADF.'
+  assert_includes html, 'ADF Item 1'
+  assert_includes html, '<div class="ulist">'
+    end
+  end
 end
 
 def test_atlas_mention_macro_with_adf_output
