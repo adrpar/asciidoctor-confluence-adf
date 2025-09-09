@@ -4,6 +4,7 @@ require 'net/http'
 require 'json'
 
 require_relative 'confluence_client'
+require_relative 'adf_to_asciidoc'
 
 class JiraInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
   use_dsl
@@ -79,6 +80,11 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
   named :jiraIssuesTable
   name_positional_attributes 'jql'
 
+  def initialize(*args)
+    super
+    @adf_converter = AdfToAsciidocConverter.new
+  end
+
   def process(parent, target, attrs)
     return handle_invalid_attributes(parent, target, attrs) unless valid_attributes?(attrs)
     
@@ -130,7 +136,15 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     when Array
       format_array_field(field_value)
     when Hash
-      format_hash_field(field_value)
+      if field_value.key?('type') && field_value['type'] == 'doc'
+        converted = @adf_converter.convert(field_value).to_s
+        # Strip leading/trailing blank lines to avoid empty first paragraph inside cell
+        converted = converted.gsub(/^\n+/, '').gsub(/\n+\z/, '')
+        converted = ensure_blank_line_before_lists(converted)
+        "a|\n#{converted}"
+      else
+        format_hash_field(field_value)
+      end
     when String
       format_string_field(field_value)
     when nil
@@ -205,7 +219,7 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
   end
 
   def handle_failed_api_query(parent, target, attrs, result)
-    warn ">>> WARN: Jira API query failed or returned no issues: #{result[:message] || 'Unknown error'}"
+    warn ">>> WARN: Jira API query failed or returned no issues: #{result[:error] || 'Unknown error'}"
     create_paragraph(parent, "jiraIssuesTable::#{target}[fields=\"#{attrs['fields']}\"]", {})
   end
 
@@ -255,7 +269,7 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     
     # Add data rows
     issues.each do |issue|
-      table << build_table_row(issue, fields, base_url) + "\n"
+      table << build_table_row(issue, fields, base_url)
     end
     
     table << "|===\n"
@@ -302,43 +316,33 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
   end
 
   def build_table_row(issue, fields, base_url)
-    row_values = []
-    
-    fields.each do |field|
-      if field == 'key'
-        row_values << format_key_field(issue['key'], base_url)
-      elsif field == 'status' && issue['fields'] && issue['fields'][field]
-        row_values << format_status_field(issue['fields'][field])
+    # Collect cell renderings respecting block (a|) cells which must start at beginning of line
+    rendered_cells = []
+    fields.each do |field_id|
+      field_value = issue.dig('fields', field_id)
+      value = case field_id
+              when 'key'
+                format_key_field(issue['key'], base_url)
+              when 'status'
+                format_status_field(field_value)
+              else
+                format_custom_field(field_value)
+              end
+
+      if value.to_s.start_with?("a|\n")
+        # Block cell: already includes a| and newline
+        rendered_cells << value
+      elsif value.to_s.start_with?("a|")
+        # Edge case: a| with no immediate newline content; ensure newline
+        rendered_cells << (value.end_with?("\n") ? value : value + "\n")
       else
-        field_value = issue['fields'] ? issue['fields'][field] : nil
-        formatted = format_custom_field(field_value)
-        
-        if formatted.include?("\n") && formatted.include?("- ")
-          # Use AsciiDoc cell specifier for rich content
-          row_values << "a|\n#{formatted}"
-        else
-          row_values << formatted
-        end
+        # Simple inline cell
+        rendered_cells << "| #{value.to_s.gsub(/\|/, '\\|')}"
       end
     end
-    
-    # Build the row with proper cell handling
-    row_values.each_with_index.map do |value, idx|
-      if value.start_with?("a|")
-        # For AsciiDoc cells, don't add the pipe prefix
-        if idx == 0
-          value  # First cell already has the prefix
-        else
-          "\n#{value}"  # Add a newline before other cells with AsciiDoc content
-        end
-      else
-        if idx == 0
-          "| #{value}"
-        else
-          " | #{value}"
-        end
-      end
-    end.join("")
+
+    # Join cells with newlines. Each cell already starts with its delimiter.
+    rendered_cells.map { |c| c.end_with?("\n") ? c : c + "\n" }.join
   end
 
   def format_key_field(key, base_url)
@@ -347,13 +351,13 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
   end
 
   def format_string_field(content)
+    return "" if content.nil? || content.empty?
+    
     content = process_wiki_links(content)
     
-    # Check if content contains bullet points or multiple paragraphs
-    has_complex_content = content.match?(/^[ \t]*[*\-][ \t]+/m) || content.match?(/\n\s*\n/)
-    
-    if has_complex_content
-      format_complex_content(content)
+    # Use 'a|' for any multi-line content or content with list-like structures
+    if content.include?("\n") || content.match?(/^[ \t]*[*\-][ \t]+/)
+      "a|\n#{format_complex_content(content)}"
     else
       format_simple_content(content)
     end
@@ -382,63 +386,61 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
   end
 
   def format_complex_content(content)
-    lines = content.split(/[\r\n]+/)
-    
-    # Process each line
-    processed_lines = []
-    last_line_was_bold_title = false
-    
-    lines.each do |line|
-      line = line.rstrip
-      
-      is_bold_title = line.match?(/^\s*\*[^*]+:\*\s*$/)
-      
-      # Add empty line before new bold section titles (except the first one)
-      if is_bold_title && !processed_lines.empty? && !last_line_was_bold_title
-        processed_lines << ""
-      end
-      
-      # Process the line based on its type
-      if line.strip.start_with?('*') && line.strip.match?(/^\*\s+/)
-        process_bullet_point(line, processed_lines)
+    lines = content.split(/\r?\n/)
+    processed = []
+    lines.each_with_index do |line, idx|
+      if line.match?(/^[ \t]*\*[ \t]+/)
+        # If previous non-empty line isn't blank and not a bullet, insert blank line for list start
+        prev_non_blank = processed.reverse.find { |l| !l.strip.empty? }
+        if prev_non_blank && !prev_non_blank.start_with?('* ')
+          processed << ''
+        end
+        processed << line.sub(/^[ \t]*\*/, '*').sub(/\*[ ]+/, '* ')
       else
-        processed_lines << process_regular_line(line)
+        processed << process_regular_line(line)
       end
-      
-      last_line_was_bold_title = is_bold_title
     end
-    
-    content = processed_lines.join("\n")
-    
-    # Escape pipes to avoid breaking table
-    content.gsub(/\|/, '\\|')
+    ensure_blank_line_before_lists(processed.join("\n"))
+  end
+
+  def ensure_blank_line_before_lists(text)
+    out_lines = []
+    previous_non_blank = nil
+    text.split(/\n/).each do |l|
+      if l.start_with?('* ')
+        if previous_non_blank && !previous_non_blank.start_with?('* ') && !out_lines.last.to_s.empty?
+          out_lines << ''
+        end
+      end
+      out_lines << l
+      previous_non_blank = l unless l.strip.empty?
+    end
+    out_lines.join("\n")
   end
 
   def process_bullet_point(line, processed_lines)
     # Add empty line before bullet points for proper list formatting
-    if !processed_lines.empty? && !processed_lines.last.strip.empty? && 
-       !processed_lines.last.strip.start_with?('-')
+    if !processed_lines.empty? && !processed_lines.last.empty? && 
+       !processed_lines.last.match?(/^[ \t]*\*[ \t]/)
       processed_lines << ""
     end
     
-    # Convert Jira bullet (* item) to AsciiDoc bullet (- item)
+    # Convert Jira bullet (* item) to AsciiDoc bullet
     indentation = line[/^\s*/]
-    bullet_content = line.sub(/^\s*\*\s+/, '')
+    bullet_content = line.sub(/^[ \t]*\*[ \t]+/, '')
     
     # Process bold and italic in the bullet content
-    bullet_content = bullet_content
-      .gsub(/\*([^*\r\n]+)\*/, '*\1*')  # Bold
-      .gsub(/_([^_\n]+)_/, '_\1_')      # Italic
+    bullet_content = process_regular_line(bullet_content)
     
-    processed_lines << "#{indentation}- #{bullet_content}"
+    processed_lines << "#{indentation}* #{bullet_content}"
   end
 
   def process_regular_line(line)
     # Process bold text
-    line = line.gsub(/\*([^*\r\n]+)\*/, '*\1*')
+    line = line.gsub(/\*([^\*\s][^\*]*[^\*\s]|[^\*])\*/, '*\1*')
     
     # Convert italic syntax
-    line.gsub(/_([^_\n]+)_/, '_\1_')
+    line.gsub(/_([^\s_][^_]*[^\s_]|[^\s_])_/, '_\1_')
   end
 
   def format_simple_content(content)
@@ -446,9 +448,7 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     content = content.gsub(/[\r\n]+/, " ")
     
     # Handle Jira markup for bold and italic
-    content = content
-      .gsub(/\*([^*\n]+)\*/, '*\1*')
-      .gsub(/_([^_\n]+)_/, '_\1_')
+    content = process_regular_line(content)
     
     # Escape pipe characters
     content.gsub(/\|/, "\\|")

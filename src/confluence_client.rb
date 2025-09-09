@@ -41,9 +41,10 @@ class ConfluenceJiraClient
     end
   end
 
-  # Query Jira issues using JQL
+  # Query Jira issues using JQL - Updated to use v3 JQL endpoint
   def query_jira_issues(jql:, fields: nil)
-    uri = URI("#{@jira_base_url}/rest/api/2/search")
+    # Updated to new REST API v3 JQL search endpoint
+    uri = URI("#{@jira_base_url}/rest/api/3/search/jql")
     params = { 'jql' => jql }
     params['fields'] = fields.join(',') if fields # Only add fields parameter if specified
     uri.query = URI.encode_www_form(params)
@@ -68,9 +69,10 @@ class ConfluenceJiraClient
     end
   end
 
-  # Get all available Jira fields metadata
+  # Get all available Jira fields metadata - Updated to use v3 API
   def get_jira_fields
-    uri = URI("#{@jira_base_url}/rest/api/2/field")
+    # Updated to REST API v3 field endpoint
+    uri = URI("#{@jira_base_url}/rest/api/3/field")
     req = Net::HTTP::Get.new(uri)
     req.basic_auth(@user_email, @api_token)
     req['Accept'] = 'application/json'

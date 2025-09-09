@@ -169,6 +169,21 @@ def test_process_heading_node():
     assert result[0] == "\n== Heading title\n"
 
 
+def test_hard_break_in_paragraph():
+    node = {
+        "type": "paragraph",
+        "content": [
+            {"type": "text", "text": "Line1", "marks": [{"type": "strong"}]},
+            {"type": "hardBreak"},
+            {"type": "text", "text": "Line2"},
+        ],
+    }
+    context = {}
+    result = process_paragraph_node(node, context)
+    # Expect newline inserted between Line1 and Line2, with bold formatting on Line1
+    assert "*Line1*\nLine2" in result[0]
+
+
 def test_process_code_block_node():
     node = {
         "type": "codeBlock",

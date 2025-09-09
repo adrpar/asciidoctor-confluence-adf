@@ -443,6 +443,9 @@ def get_node_text_content(node, context):
             text = text.replace("|", "\\|")
 
         return text
+    elif node.get("type") == "hardBreak":
+        # Represent hardBreak as a newline within paragraph content
+        return "\n"
     elif node.get("content") and isinstance(node.get("content"), list):
         return "".join(
             get_node_text_content(child, context) for child in node.get("content")
