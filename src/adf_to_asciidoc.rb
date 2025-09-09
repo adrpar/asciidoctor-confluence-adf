@@ -115,9 +115,17 @@ class AdfToAsciidocConverter
     marker = context[:list_marker] || '*'
     indent = marker * context[:list_depth]
     
-    content_text = (node['content'] || []).map do |content_node|
-      process_node(content_node, context)
-    end.join.strip
+    parts = []
+    (node['content'] || []).each_with_index do |content_node, idx|
+      rendered = process_node(content_node, context)
+      # If this content node is a nested list and previous part doesn't end with a newline, insert one
+      if idx > 0 && content_node.is_a?(Hash) && content_node['type']&.end_with?('List') && !(parts.last&.end_with?("\n"))
+        parts << "\n" + rendered
+      else
+        parts << rendered
+      end
+    end
+    content_text = parts.join.strip
 
     "#{indent} #{content_text}\n"
   end
