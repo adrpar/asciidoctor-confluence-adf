@@ -2,9 +2,11 @@ require 'asciidoctor'
 require 'asciidoctor/extensions'
 require 'net/http'
 require 'json'
+require 'csv'
 
 require_relative 'confluence_client'
 require_relative 'adf_to_asciidoc'
+require_relative 'adf_logger'
 
 class JiraInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
   use_dsl
@@ -15,7 +17,7 @@ class JiraInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
   def process parent, target, attrs
     base_url = parent.document.attr('jira-base-url') || ENV['JIRA_BASE_URL']
     if base_url.nil? || base_url.empty?
-      warn ">>> WARN: No Jira base URL found, the Jira extension may not work as expected."
+      AdfLogger.warn "No Jira base URL found, the Jira extension may not work as expected."
       if attrs['text']
         return %(jira:#{target}[#{attrs['text']}])
       else
@@ -45,7 +47,7 @@ class AtlasMentionInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
 
 
       if confluence_base_url.nil? || api_token.nil? || user_email.nil?
-        warn ">>> WARN: Missing Confluence API credentials for atlasMention macro."
+        AdfLogger.warn "Missing Confluence API credentials for atlasMention macro."
         return { "type" => "text", "text" => "@#{name}" }.to_json
       end
 
@@ -87,26 +89,35 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
 
   def process(parent, target, attrs)
     return handle_invalid_attributes(parent, target, attrs) unless valid_attributes?(attrs)
-    
+
     credentials = get_credentials(parent)
     return handle_missing_credentials(parent, target, attrs) unless credentials_valid?(credentials)
-    
-    fields = parse_fields(attrs)
+
+    user_fields = parse_fields(attrs)
     jql = parse_jql(target, attrs)
     return handle_missing_jql(parent, target, attrs) if jql.nil? || jql.empty?
 
     client = create_jira_client(credentials)
-    
+
+    # Fetch field metadata before resolving user supplied field names
+    field_result = client.get_jira_fields
+
+    resolved_fields, unknown_fields = resolve_and_normalize_fields(user_fields, field_result)
+    if !unknown_fields.empty?
+      print_field_information_for_debugging([], field_result)
+      # Log as error so Asciidoctor CLI can exit non-zero without stacktrace
+      AdfLogger.error "Unknown Jira field name(s): #{unknown_fields.map { |f| '"' + f + '"' }.join(', ')}. Use an exact field name as shown above or the custom field id (e.g. customfield_12345)."
+      return create_paragraph(parent, "jiraIssuesTable::[#{target}, fields=\"#{attrs['fields']}\"]", {})
+    end
+
     result = client.query_jira_issues(
       jql: jql,
-      fields: fields
+      fields: resolved_fields
     )
-    
-    field_result = client.get_jira_fields
-    
+
     if api_query_successful?(result)
-      table_content = build_table(result[:data]['issues'], fields, field_result, credentials[:base_url])
-      
+      table_content = build_table(result[:data]['issues'], resolved_fields, field_result, credentials[:base_url])
+
       # Add bold title if specified
       if attrs['title']
         title_content = "**#{attrs['title']}**\n\n"
@@ -195,7 +206,7 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     if unknown_attrs.empty?
       true
     else
-      warn ">>> WARN: Unknown attributes for jiraIssuesTable macro: #{unknown_attrs.join(', ')}"
+      AdfLogger.warn "Unknown attributes for jiraIssuesTable macro: #{unknown_attrs.join(', ')}"
       false
     end
   end
@@ -209,17 +220,17 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
   end
 
   def handle_missing_credentials(parent, target, attrs)
-    warn ">>> WARN: Missing Jira API credentials for jiraIssuesTable macro."
+    AdfLogger.warn "Missing Jira API credentials for jiraIssuesTable macro."
     create_paragraph(parent, "jiraIssuesTable::#{target}[fields=\"#{attrs['fields']}\"]", {})
   end
 
   def handle_missing_jql(parent, target, attrs)
-    warn ">>> WARN: Missing JQL query for jiraIssuesTable macro."
+    AdfLogger.warn "Missing JQL query for jiraIssuesTable macro."
     create_paragraph(parent, "jiraIssuesTable::#{target}[fields=\"#{attrs['fields']}\"]", {})
   end
 
   def handle_failed_api_query(parent, target, attrs, result)
-    warn ">>> WARN: Jira API query failed or returned no issues: #{result[:error] || 'Unknown error'}"
+    AdfLogger.warn "Jira API query failed or returned no issues: #{result[:error] || 'Unknown error'}"
     create_paragraph(parent, "jiraIssuesTable::#{target}[fields=\"#{attrs['fields']}\"]", {})
   end
 
@@ -233,9 +244,17 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
   end
 
   def parse_fields(attrs)
-    fields_param = attrs['fields'] 
-    fields = fields_param ? fields_param.split(',').map(&:strip) : nil
-    fields || ['key', 'summary', 'status']
+    raw = attrs['fields']
+    return ['key', 'summary', 'status'] if raw.nil? || raw.strip.empty?
+
+    # Allow single-quoted field names (including commas) by converting them to standard CSV double quotes.
+    # Supports escaping single quotes inside a single-quoted token by doubling them: 'Another ''Quoted'' Field'
+    normalized = raw.gsub(/'([^']*(?:''[^']*)*)'/) do
+      inner = Regexp.last_match(1).gsub(/''/, "'") # unescape doubled single quotes
+      '"' + inner.gsub('"', '""') + '"'          # escape any embedded double quotes for CSV
+    end
+    fields = CSV.parse_line(normalized, col_sep: ',', quote_char: '"', skip_blanks: true) || []
+    fields = fields.map { |field| field.is_a?(String) ? field.strip : field.to_s }.reject(&:empty?)
   end
 
   def parse_jql(target, attrs)
@@ -257,7 +276,6 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
 
   def build_table(issues, fields, field_result, base_url)
     field_names = build_field_names_mapping(field_result)
-    print_field_information_for_debugging(issues, field_result)
 
     # Build the table structure
     col_defs = define_column_widths(fields)
@@ -281,7 +299,9 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     
     if field_result && field_result[:success] && field_result[:fields]
       field_result[:fields].each do |field|
-        field_names[field['id']] = field['name']
+  # Trim trailing whitespace for stable display while keeping original ID association
+  display_name = field['name'] ? field['name'].rstrip : field['name']
+  field_names[field['id']] = display_name
       end
     end
     
@@ -460,15 +480,16 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     return if @@field_info_printed
     
     if !field_result[:success]
-      warn ">>> WARN: Unable to fetch field metadata: #{field_result[:error]}"
+      AdfLogger.warn "Unable to fetch field metadata: #{field_result[:error]}"
       return
     end
     
     # Create a mapping of field ID to field name
     field_map = {}
     field_result[:fields].each do |field|
+      trimmed_name = field['name'] ? field['name'].rstrip : field['name']
       field_map[field['id']] = {
-        name: field['name'],
+        name: trimmed_name,
         type: field['schema'] ? field['schema']['type'] : 'unknown',
         custom: field['custom'],
         description: field['description']
@@ -484,33 +505,74 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
       end
     end
     
-    puts ">>> JIRA FIELD REFERENCE:"
-    puts ">>> ====================="
-    puts ">>> Custom Fields:"
-    puts ">>> -------------"
+    AdfLogger.info "JIRA FIELD REFERENCE:"
+    AdfLogger.info "====================="
+    AdfLogger.info "Custom Fields:"
+    AdfLogger.info "-------------"
     
     field_map.each do |field_id, info|
       next unless info[:custom]
       used = used_fields[field_id] ? " (PRESENT IN RESULTS)" : ""
-      puts sprintf(">>> %-25s = %-30s [%s]%s", field_id, "\"#{info[:name]}\"", info[:type], used)
-      puts sprintf(">>>    Description: %s", info[:description]) if info[:description]
+      AdfLogger.info sprintf("%-25s = %-30s [%s]%s", field_id, "\"#{info[:name]}\"", info[:type], used)
+      AdfLogger.info sprintf("   Description: %s", info[:description]) if info[:description]
     end
     
-    puts ">>> "
-    puts ">>> Standard Fields:"
-    puts ">>> ---------------"
+    AdfLogger.info ""
+    AdfLogger.info "Standard Fields:"
+    AdfLogger.info "---------------"
     field_map.each do |field_id, info|
       next if info[:custom]
       used = used_fields[field_id] ? " (PRESENT IN RESULTS)" : ""
-      puts sprintf(">>> %-25s = %-30s [%s]%s", field_id, "\"#{info[:name]}\"", info[:type], used)
+      AdfLogger.info sprintf("%-25s = %-30s [%s]%s", field_id, "\"#{info[:name]}\"", info[:type], used)
     end
     
-    puts ">>> "
-    puts ">>> USAGE EXAMPLE: jiraIssuesTable:[project = DEMO,fields=key,summary,status,customfield_10984]"
-    puts ">>> =============="
+    AdfLogger.info ""
+    AdfLogger.info "USAGE EXAMPLE: jiraIssuesTable:[project = DEMO,fields=key,summary,status,customfield_10984]"
+    AdfLogger.info "============="
     
     @@field_info_printed = true
   end
+
+  # Resolve user provided field tokens to Jira field ids. Supports:
+  #  - direct field ids (e.g. customfield_12345)
+  #  - standard fields (key, summary, status, description)
+  #  - exact field display names (case insensitive) as provided by Jira metadata
+  # Returns [resolved_fields_array, unknown_fields_array]
+  def resolve_and_normalize_fields(user_fields, field_result)
+    return [user_fields, []] unless field_result && field_result[:success] && field_result[:fields]
+
+    # Build lookup: normalized display name => id
+    name_lookup = {}
+    field_result[:fields].each do |field|
+      next unless field['name'] && field['id']
+      normalized = normalize_field_name(field['name'].rstrip)
+      name_lookup[normalized] = field['id']
+    end
+
+    resolved = []
+    unknown  = []
+    user_fields.each do |token|
+      if token =~ /^customfield_\d+$/
+        resolved << token
+      elsif %w[key summary status description].include?(token)
+        resolved << token
+      else
+        normalized_token = normalize_field_name(token)
+        if name_lookup.key?(normalized_token)
+          resolved << name_lookup[normalized_token]
+        else
+          unknown << token
+        end
+      end
+    end
+
+    [resolved, unknown]
+  end
+
+  def normalize_field_name(name)
+    name.strip.downcase.gsub(/\s+/, ' ')
+  end
+
 end
 
 Asciidoctor::Extensions.register do

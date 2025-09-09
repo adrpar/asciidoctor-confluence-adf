@@ -107,6 +107,52 @@ The macro will:
 3. Automatically format rich content in fields like description (including bullet lists, bold text, etc.)
 4. Create links to the Jira issues
 
+#### Field Selection & Resolution (New Behavior)
+
+You can specify Jira fields using either:
+- The canonical Jira field ID (e.g. `summary`, `description`, `status`, `customfield_12345`)
+- The human-readable Jira field display name exactly as shown in Jira (case-insensitive; trailing whitespace ignored)
+
+The macro now fetches field metadata first and resolves display names to field IDs automatically. This removes the need to “hunt” for `customfield_XXXXX` identifiers when composing documents.
+
+If you specify a field that does not exist:
+- An error is logged
+- A reference list of available fields (ID → Name) is printed once to help you pick the correct names
+- A placeholder paragraph is rendered instead of the table so the build fails visibly but gracefully
+
+#### Quoting Field Names Containing Commas
+
+Some field display names may contain commas. You can include these by quoting the field name:
+
+```adoc
+jiraIssuesTable::["project = DEMO", fields="key,Summary,'Complex, Field Name','Another ''Quoted'' Field'"]
+```
+
+Rules:
+- Use either single `'` or double `"` quotes around a field containing commas
+- Inside a single-quoted token, escape a literal single quote by doubling it (`''`)
+- Inside a double-quoted token, escape a literal double quote using standard CSV doubling (`""`), though this is rarely needed
+- Whitespace around tokens is trimmed
+
+#### Custom Fields
+You can always bypass name resolution by specifying the raw Jira custom field ID directly:
+```adoc
+jiraIssuesTable::["project = DEMO", fields="key,summary,customfield_12345,status"]
+```
+
+If the display name for a custom field is successfully resolved, its human-readable name is used in the table header; otherwise the raw ID is shown.
+
+#### Error Example (Unknown Field)
+
+```adoc
+jiraIssuesTable::["project = DEMO", fields="key,summary,NotARealField,status"]
+```
+Will log:
+```
+ERROR: Unknown Jira field name(s): "NotARealField". Use an exact field name as shown above or the custom field id (e.g. customfield_12345).
+```
+and emit a placeholder paragraph, avoiding a noisy stack trace while still failing the build meaningfully.
+
 **Document Attributes:**
 - `jira-base-url`: Base URL of your Jira instance
 - `confluence-api-token`: API token for Jira authentication

@@ -68,20 +68,24 @@ class JiraMacroTest < Minitest::Test
       end
     end
 
-    # Mock the Net::HTTP.start method directly
-    http_mock = Minitest::Mock.new
-    
-    # Mock the request/response for issues search
-    http_mock.expect(:request, mock_response.new('200', issues_data.to_json)) do |req|
-      req.path.include?('/search')
+    # Lightweight HTTP mock allowing any order of requests
+    http_mock = Object.new
+    def http_mock.initialize_responses(search_body, fields_body, response_class)
+      @search_body = search_body
+      @fields_body = fields_body
+      @response_class = response_class
     end
-    
-    # Mock the request/response for fields API
-    http_mock.expect(:request, mock_response.new('200', fields_data.to_json)) do |req|
-      req.path.include?('/field')
+    def http_mock.request(req)
+      if req.path.include?('/field')
+        @response_class.new('200', @fields_body.to_json)
+      elsif req.path.include?('/search')
+        @response_class.new('200', @search_body.to_json)
+      else
+        @response_class.new('404', '{}')
+      end
     end
-    
-    # Return a Proc that can be used with stub
+    http_mock.initialize_responses(issues_data, fields_data, mock_response)
+
     ->(host, port, options = {}, &block) { block.call(http_mock) }
   end
   
@@ -389,6 +393,127 @@ class JiraMacroTest < Minitest::Test
 
       # Test custom field formatting
       assert_custom_field_formatting(html)
+    end
+  end
+
+  def test_jira_issues_table_field_name_resolution
+    setup_jira_env
+
+    issues = {
+      'issues' => [
+        {
+          'key' => 'DEMO-9',
+          'fields' => {
+            'summary' => 'Summary Text',
+            'status' => { 'name' => 'Done', 'statusCategory' => { 'name' => 'Done' } },
+            'customfield_12345' => 'Custom Value'
+          }
+        }
+      ]
+    }
+
+    fields_meta = [
+      { 'id' => 'summary', 'name' => 'Summary' },
+      { 'id' => 'status', 'name' => 'Status' },
+      { 'id' => 'customfield_12345', 'name' => 'My Custom Field', 'custom' => true }
+    ]
+
+    Net::HTTP.stub :start, mock_api_responses(issues, fields_meta) do
+      html = load_and_convert_jira_table('jiraIssuesTable::"project = DEMO"[fields="key,Summary,My Custom Field,status"]')
+      assert_includes html, 'DEMO-9'
+      assert_includes html, 'Summary Text'
+      assert_includes html, 'Custom Value'
+      # Header should show resolved custom field name
+      assert_includes html, 'My Custom Field'
+    end
+  end
+
+  def test_jira_issues_table_field_name_resolution_with_trailing_spaces
+    setup_jira_env
+    issues = {
+      'issues' => [
+        { 'key' => 'DEMO-11', 'fields' => { 'summary' => 'Has spaced custom', 'customfield_55555' => 'Spaced Value' } }
+      ]
+    }
+    fields_meta = [
+      { 'id' => 'summary', 'name' => 'Summary' },
+      { 'id' => 'customfield_55555', 'name' => 'Custom Field With Space   ', 'custom' => true }
+    ]
+    Net::HTTP.stub :start, mock_api_responses(issues, fields_meta) do
+      html = load_and_convert_jira_table('jiraIssuesTable::"project = DEMO"[fields="key,Summary,Custom Field With Space,status"]')
+      assert_includes html, 'DEMO-11'
+      assert_includes html, 'Spaced Value'
+      # Header should not include trailing spaces
+      refute_includes html, 'Custom Field With Space   '
+      assert_includes html, 'Custom Field With Space'
+    end
+  end
+
+  def test_jira_issues_table_field_parsing_with_commas_inside_quotes
+    setup_jira_env
+    issues = {
+      'issues' => [
+        {
+          'key' => 'DEMO-12',
+          'fields' => {
+            'summary' => 'Comma field test',
+            'customfield_66666' => 'Value A',
+            'customfield_77778' => 'Value B'
+          }
+        }
+      ]
+    }
+    fields_meta = [
+      { 'id' => 'summary', 'name' => 'Summary' },
+      { 'id' => 'customfield_66666', 'name' => 'Complex, Field Name', 'custom' => true },
+      { 'id' => 'customfield_77778', 'name' => "Another 'Quoted' Field", 'custom' => true }
+    ]
+    Net::HTTP.stub :start, mock_api_responses(issues, fields_meta) do
+      # Use quotes around names containing commas and quotes
+      # Inner single quotes inside a single-quoted token must be doubled per CSV-style escaping rules
+      html = load_and_convert_jira_table("jiraIssuesTable::[\"project = DEMO\", fields=\"key,Summary,'Complex, Field Name','Another ''Quoted'' Field'\"]")
+      assert_includes html, 'DEMO-12'
+      assert_includes html, 'Complex, Field Name'
+      assert_includes html, "Another 'Quoted' Field"
+    end
+  end
+
+  def test_jira_issues_table_unknown_field_raises_error_and_prints_reference
+    setup_jira_env
+
+    issues = basic_jira_issues
+    fields_meta = standard_fields
+
+    Net::HTTP.stub :start, mock_api_responses(issues, fields_meta) do
+      html = load_and_convert_jira_table('jiraIssuesTable::"project = DEMO"[fields="key,summary,NotAField,status"]')
+      # Placeholder currently renders with bracketed target and comma separated attributes
+      assert_includes html, 'jiraIssuesTable::["project = DEMO", fields="key,summary,NotAField,status"]'
+    end
+  end
+
+  def test_jira_issues_table_direct_customfield_id_supported
+    setup_jira_env
+    issues = {
+      'issues' => [
+        {
+          'key' => 'DEMO-10',
+          'fields' => {
+            'summary' => 'Has direct custom id',
+            'customfield_77777' => 'Direct Custom'
+          }
+        }
+      ]
+    }
+    fields_meta = [
+      { 'id' => 'summary', 'name' => 'Summary' },
+      { 'id' => 'customfield_77777', 'name' => 'Direct Custom Field', 'custom' => true }
+    ]
+
+    Net::HTTP.stub :start, mock_api_responses(issues, fields_meta) do
+      html = load_and_convert_jira_table('jiraIssuesTable::["project = DEMO", fields="key,summary,customfield_77777"]')
+      assert_includes html, 'DEMO-10'
+      assert_includes html, 'Direct Custom'
+      assert_includes html, 'Direct Custom Field'
     end
   end
   
