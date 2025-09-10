@@ -3,11 +3,24 @@
 module AdfLogger
   module_function
 
+  # Map all logging through Asciidoctor::LoggerManager when available so that
+  # the --failure-level CLI option is honored. Any use of Kernel.warn / puts
+  # would bypass the Asciidoctor logger and therefore never trigger a non-zero
+  # exit status. Extensions should only call these helpers.
+
   def error(message)
     if defined?(Asciidoctor::LoggerManager)
       Asciidoctor::LoggerManager.logger.error message
     else
       Kernel.warn ">>> ERROR: #{message}"
+    end
+  end
+
+  def fatal(message)
+    if defined?(Asciidoctor::LoggerManager)
+      Asciidoctor::LoggerManager.logger.fatal message
+    else
+      Kernel.warn ">>> FATAL: #{message}"
     end
   end
 
