@@ -53,3 +53,36 @@ def test_extract_images_and_includes_missing_image(tmp_path):
     images = []
     with pytest.raises(FileNotFoundError):
         extract_images_and_includes(str(adoc), images)
+
+
+def test_commented_out_image_and_include_are_ignored(tmp_path):
+    # Create real resources that would be referenced if not commented
+    img = tmp_path / "ignored.png"
+    img.write_bytes(b"fakeimg")
+    inc = tmp_path / "ignored_include.adoc"
+    inc.write_text("image::ignored.png[]\n")
+
+    # Main doc with commented lines
+    adoc = tmp_path / "main.adoc"
+    adoc.write_text(
+        "// image::ignored.png[]\n// include::ignored_include.adoc[]\n"
+    )
+
+    images = []
+    extract_images_and_includes(str(adoc), images)
+    assert images == []
+
+
+def test_block_comment_ignored(tmp_path):
+    img2 = tmp_path / "ignored2.png"
+    img2.write_bytes(b"fakeimg2")
+    adoc = tmp_path / "block.adoc"
+    adoc.write_text(
+        "////\nimage::ignored2.png[]\n////\nimage::actually_used.png[]\n"
+    )
+    used = tmp_path / "actually_used.png"
+    used.write_bytes(b"used")
+
+    images = []
+    extract_images_and_includes(str(adoc), images)
+    assert str(used) in images and str(img2) not in images

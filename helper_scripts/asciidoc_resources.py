@@ -35,8 +35,20 @@ def extract_images_and_includes(
 def extract_images_and_includes_from_file(
     asciidoc_file_path, base_dir, images, includes, imagesdir
 ):
+    block_comment = False
     with open(asciidoc_file_path, "r") as file:
         for line in file:
+            # Detect block comment delimiters (////) on a line by themselves
+            if re.match(r"^\s*////\s*$", line):
+                block_comment = not block_comment
+                continue
+            if block_comment:
+                continue
+
+            # Ignore single-line comments starting with // (optionally indented)
+            if re.match(r"^\s*//", line):
+                continue
+
             imagesdir = extract_image_and_include_paths_from_line(
                 line, imagesdir, base_dir, asciidoc_file_path, images, includes
             )
