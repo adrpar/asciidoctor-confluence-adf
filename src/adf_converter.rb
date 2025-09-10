@@ -11,14 +11,14 @@ class AdfConverter < Asciidoctor::Converter::Base
   include InlineAnchorHelper
   register_for 'adf'
 
-  DEFAULT_MARK_BACKGROUND_COLOR = '#FFFF00' # yellow
+  DEFAULT_MARK_BACKGROUND_COLOR = '#FFFF00'
 
   ADMONITION_TYPE_MAPPING = {
-    "note" => "info",
-    "tip" => "info",
-    "warning" => "warning",
-    "important" => "error",
-    "caution" => "error"
+    'note' => 'info',
+    'tip' => 'info',
+    'warning' => 'warning',
+    'important' => 'error',
+    'caution' => 'error'
   }.freeze
 
   attr_accessor :node_list
@@ -59,18 +59,11 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def convert_document(node)
-    # Process sections if present
     sectioned = node.sections
     if sectioned && (node.attr? 'toc') && (node.attr? 'toc-placement', 'auto')
       convert_toc(node)
     end
-    
-    # Process all blocks in the document
-    node.blocks.each do |block|
-      convert(block)
-    end
-
-    # Return the document with the collected nodes
+    node.blocks.each { |block| convert(block) }
     AdfBuilder.serialize_document(self.node_list.compact).to_json
   end
 
@@ -80,11 +73,8 @@ class AdfConverter < Asciidoctor::Converter::Base
 
   def convert_section(node)
     anchor = node.id ? convert_anchor(node) : nil
-
-    # Create the heading for the section
     self.node_list << AdfBuilder.heading_node(node.level + 1, [create_text_node(node.title), anchor].compact)
-
-    node.blocks.map { |block| convert(block) }
+    node.blocks.each { |block| convert(block) }
   end
 
   def convert_ulist(node)
@@ -297,11 +287,11 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def convert_listing(node)
-    self.node_list << AdfBuilder.code_block_node(node.attr('language') || 'plaintext', node.content)
+    self.node_list << build_code_block(node)
   end
 
   def convert_literal(node)
-    self.node_list << AdfBuilder.code_block_node(node.attr('language') || 'plaintext', node.content)
+    self.node_list << build_code_block(node)
   end
 
   def convert_pass(node)
@@ -314,13 +304,11 @@ class AdfConverter < Asciidoctor::Converter::Base
 
   def parse_or_escape(text)
     content_array = []
-    buffer = ""
-    json_buffer = ""
+    buffer = ''
+    json_buffer = ''
     inside_json = false
     json_depth = 0
-
     text = CGI.unescapeHTML(text)
-
     text.each_char do |char|
       if inside_json
         json_buffer << char
@@ -344,7 +332,6 @@ class AdfConverter < Asciidoctor::Converter::Base
         end
       end
     end
-
     content_array << create_text_node(buffer) unless buffer.empty?
     content_array
   end
@@ -375,8 +362,22 @@ class AdfConverter < Asciidoctor::Converter::Base
     node.compact
   end
 
-  # create_paragraph_node retained for backward usage in existing tests referencing private API
   def create_paragraph_node(content)
     AdfBuilder.paragraph_node(content)
+  end
+
+  # DRY helper for listing & literal blocks
+  def build_code_block(node)
+    AdfBuilder.code_block_node(resolve_code_language(node), node.content)
+  end
+
+  def resolve_code_language(node)
+    lang = node.attr('language')
+    lang = nil if lang.is_a?(String) && lang.strip.empty?
+    lang || 'plaintext'
+  end
+
+  def table_cell_spans(cell)
+    [cell.colspan || 1, cell.rowspan || 1]
   end
 end

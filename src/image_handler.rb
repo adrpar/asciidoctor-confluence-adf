@@ -46,20 +46,9 @@ module ImageHandler
       logger.debug "Resolving local image: target='#{target}', base_dir='#{document.base_dir}', imagesdir='#{images_dir_attr || ''}'"
     end
 
-    # Create a list of potential paths to search for the image using Asciidoctor's path resolver.
-    search_paths = []
-
-    # Path 1: Relative to the imagesdir attribute. This is the highest priority.
-    # We construct the relative path first, then ask Asciidoctor to normalize it against the base_dir.
-    if images_dir_attr && !images_dir_attr.empty?
-      search_paths << document.normalize_system_path(File.join(images_dir_attr, target))
-    end
-
-    # Path 2: Relative to the document's base directory (fallback).
-    search_paths << document.normalize_system_path(target)
-
-    # Remove duplicates and find the first path that actually exists.
-    found_path = search_paths.compact.uniq.find { |path| File.exist?(path) }
+    # Build candidate paths via helper
+    search_paths = build_image_search_paths(document, target, images_dir_attr)
+    found_path = search_paths.find { |path| File.exist?(path) }
 
     if found_path
       unless is_inline
@@ -78,6 +67,16 @@ module ImageHandler
     end
     
     [width, height]
+  end
+
+  # Centralizes construction of candidate image search paths. Order matters.
+  def build_image_search_paths(document, target, images_dir_attr)
+    paths = []
+    if images_dir_attr && !images_dir_attr.empty?
+      paths << document.normalize_system_path(File.join(images_dir_attr, target))
+    end
+    paths << document.normalize_system_path(target)
+    paths.compact.uniq
   end
   
   # Helper method to detect dimensions from a remote image URI

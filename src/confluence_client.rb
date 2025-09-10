@@ -1,5 +1,6 @@
 require 'net/http'
 require 'json'
+require_relative 'adf_logger'
 
 # Simple Confluence and Jira API client
 class ConfluenceJiraClient
@@ -32,11 +33,11 @@ class ConfluenceJiraClient
           nil
         end
       else
-        warn ">>> WARN: Failed to query Confluence user: #{uri.to_s} -> #{res.code} #{res.message}"
+        AdfLogger.warn "Failed to query Confluence user: #{uri} -> #{res.code} #{res.message}"
         nil
       end
     rescue => e
-      warn ">>> WARN: Failed to query Confluence user: #{e}"
+      AdfLogger.warn "Failed to query Confluence user: #{e}"
       nil
     end
   end

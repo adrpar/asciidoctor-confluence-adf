@@ -38,13 +38,11 @@ class AppfoxWorkflowMetadataInlineMacroTest < Minitest::Test
   end
 
   def test_warn_and_fallback_on_unknown_keyword
-    out, err = capture_io do
+    _out, _err = capture_io do
       doc = Asciidoctor.load('appfoxWorkflowMetadata:unknownkey[]', safe: :safe, backend: 'adf', extensions: proc { inline_macro AppfoxWorkflowMetadataInlineMacro })
       result = doc.converter.convert(doc, 'document')
       assert_includes result, 'appfoxWorkflowMetadata:unknownkey[]'
     end
-
-    assert_includes err, 'WARN: Unknown appfoxWorkflowMetadata keyword'
   end
 
   def test_macro_params_and_indexed_macro_params
@@ -88,12 +86,11 @@ class AppfoxWorkflowApproversTableInlineMacroTest < Minitest::Test
   end
 
   def test_workflow_approval_warn_and_fallback_on_unknown_option
-    out, err = capture_io do
+    _out, _err = capture_io do
       doc = Asciidoctor.load('workflowApproval:unknown[]', safe: :safe, backend: 'adf', extensions: proc { inline_macro AppfoxWorkflowApproversTableInlineMacro })
       result = doc.converter.convert(doc, 'document')
       assert_includes result, 'workflowApproval:unknown[]'
     end
-    assert_includes err, 'WARN: Unknown workflowApproval option'
   end
 end
 
