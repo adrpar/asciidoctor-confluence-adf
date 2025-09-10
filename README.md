@@ -125,7 +125,7 @@ If you specify a field that does not exist:
 Some field display names may contain commas. You can include these by quoting the field name:
 
 ```adoc
-jiraIssuesTable::["project = DEMO", fields="key,Summary,'Complex, Field Name','Another ''Quoted'' Field'"]
+jiraIssuesTable::['project = "DEMO"', fields='key,Summary,"Complex, Field Name","Another \'Quoted\' Field"']
 ```
 
 Rules:
@@ -137,7 +137,7 @@ Rules:
 #### Custom Fields
 You can always bypass name resolution by specifying the raw Jira custom field ID directly:
 ```adoc
-jiraIssuesTable::["project = DEMO", fields="key,summary,customfield_12345,status"]
+jiraIssuesTable::['project = "DEMO"', fields='key,summary,customfield_12345,status']
 ```
 
 If the display name for a custom field is successfully resolved, its human-readable name is used in the table header; otherwise the raw ID is shown.
@@ -145,13 +145,13 @@ If the display name for a custom field is successfully resolved, its human-reada
 #### Error Example (Unknown Field)
 
 ```adoc
-jiraIssuesTable::["project = DEMO", fields="key,summary,NotARealField,status"]
+jiraIssuesTable::['project = "DEMO"', fields='key,summary,NotARealField,status']
 ```
 Will log:
 ```
 ERROR: Unknown Jira field name(s): "NotARealField". Use an exact field name as shown above or the custom field id (e.g. customfield_12345).
 ```
-and emit a placeholder paragraph, avoiding a noisy stack trace while still failing the build meaningfully.
+and emit a placeholder paragraph.
 
 **Document Attributes:**
 - `jira-base-url`: Base URL of your Jira instance

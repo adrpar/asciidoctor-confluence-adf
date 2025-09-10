@@ -105,9 +105,8 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     resolved_fields, unknown_fields = resolve_and_normalize_fields(user_fields, field_result)
     if !unknown_fields.empty?
       print_field_information_for_debugging([], field_result)
-      # Log as error so Asciidoctor CLI can exit non-zero without stacktrace
       AdfLogger.error "Unknown Jira field name(s): #{unknown_fields.map { |f| '"' + f + '"' }.join(', ')}. Use an exact field name as shown above or the custom field id (e.g. customfield_12345)."
-      return create_paragraph(parent, "jiraIssuesTable::[#{target}, fields=\"#{attrs['fields']}\"]", {})
+      return create_paragraph(parent, "jiraIssuesTable::['#{jql}', fields='#{attrs['fields']}']", {})
     end
 
     result = client.query_jira_issues(
@@ -126,7 +125,7 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
 
       parse_content parent, table_content, {}
     else
-      handle_failed_api_query(parent, target, attrs, result)
+      handle_failed_api_query(parent, jql, attrs, result)
     end
   end
 
@@ -200,8 +199,8 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
   private
 
   def valid_attributes?(attrs)
-    valid_attrs = ['jql', 'fields', 'title', '1']
-    unknown_attrs = attrs.keys.reject { |k| valid_attrs.include?(k.to_s()) || k.to_s().start_with?('_') }
+    valid_attrs = ['jql', 'fields', 'title']
+    unknown_attrs = attrs.keys.reject { |k| valid_attrs.include?(k.to_s) || k.to_s.start_with?('_') || k.to_s.match?(/^\d+$/) }
     
     if unknown_attrs.empty?
       true
@@ -216,22 +215,25 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
   end
 
   def handle_invalid_attributes(parent, target, attrs)
-    create_paragraph(parent, "jiraIssuesTable::#{target}[INVALID ATTRIBUTES]", {})
+    # Attempt to recover JQL from positional attribute if provided
+    jql = target.to_s.empty? ? (attrs['jql'] || attrs['1']) : target
+    create_paragraph(parent, "jiraIssuesTable::['#{jql}', fields='INVALID ATTRIBUTES']", {})
   end
 
   def handle_missing_credentials(parent, target, attrs)
     AdfLogger.warn "Missing Jira API credentials for jiraIssuesTable macro."
-    create_paragraph(parent, "jiraIssuesTable::#{target}[fields=\"#{attrs['fields']}\"]", {})
+    jql = target.to_s.empty? ? (attrs['jql'] || attrs['1']) : target
+    create_paragraph(parent, "jiraIssuesTable::['#{jql}', fields='#{attrs['fields']}']", {})
   end
 
   def handle_missing_jql(parent, target, attrs)
     AdfLogger.warn "Missing JQL query for jiraIssuesTable macro."
-    create_paragraph(parent, "jiraIssuesTable::#{target}[fields=\"#{attrs['fields']}\"]", {})
+    create_paragraph(parent, "jiraIssuesTable::['', fields='#{attrs['fields']}']", {})
   end
 
   def handle_failed_api_query(parent, target, attrs, result)
     AdfLogger.warn "Jira API query failed or returned no issues: #{result[:error] || 'Unknown error'}"
-    create_paragraph(parent, "jiraIssuesTable::#{target}[fields=\"#{attrs['fields']}\"]", {})
+    create_paragraph(parent, "jiraIssuesTable::['#{target}', fields='#{attrs['fields']}']", {})
   end
 
   def get_credentials(parent)
@@ -247,18 +249,27 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     raw = attrs['fields']
     return ['key', 'summary', 'status'] if raw.nil? || raw.strip.empty?
 
-    # Allow single-quoted field names (including commas) by converting them to standard CSV double quotes.
-    # Supports escaping single quotes inside a single-quoted token by doubling them: 'Another ''Quoted'' Field'
-    normalized = raw.gsub(/'([^']*(?:''[^']*)*)'/) do
-      inner = Regexp.last_match(1).gsub(/''/, "'") # unescape doubled single quotes
-      '"' + inner.gsub('"', '""') + '"'          # escape any embedded double quotes for CSV
+    # Allow single-quoted field tokens (including commas) by converting ONLY whole single-quoted tokens
+    # bounded by start/end or commas, not isolated single-quoted words inside a double-quoted token.
+    # Example (should NOT change inner quotes):
+    #   key,Summary,"Complex, Field Name","Another 'Quoted' Field"  => unchanged
+    # Example (should convert):
+    #   key,Summary,'Complex, Field Name','Another ''Quoted'' Field'
+    # We match (^|,) optional leading comma boundary, then the single-quoted token, ensuring next char is comma or end.
+    normalized = raw.gsub(/(^|,)\s*'([^']*(?:''[^']*)*)'\s*(?=,|$)/) do
+      prefix = Regexp.last_match(1)
+      inner  = Regexp.last_match(2).gsub(/''/, "'") # unescape doubled single quotes
+      # Re-wrap in double quotes, escaping embedded double quotes per CSV rules.
+      %(#{prefix}"#{inner.gsub('"', '""')}")
     end
+
     fields = CSV.parse_line(normalized, col_sep: ',', quote_char: '"', skip_blanks: true) || []
     fields = fields.map { |field| field.is_a?(String) ? field.strip : field.to_s }.reject(&:empty?)
   end
 
   def parse_jql(target, attrs)
-    target.to_s.empty? ? attrs['jql'] : target
+    return target if !target.to_s.empty?
+    attrs['jql'] || attrs['1']
   end
 
   def create_jira_client(credentials)
@@ -299,9 +310,9 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     
     if field_result && field_result[:success] && field_result[:fields]
       field_result[:fields].each do |field|
-  # Trim trailing whitespace for stable display while keeping original ID association
-  display_name = field['name'] ? field['name'].rstrip : field['name']
-  field_names[field['id']] = display_name
+      # Trim trailing whitespace for stable display while keeping original ID association
+      display_name = field['name']&.rstrip
+      field_names[field['id']] = display_name
       end
     end
     
@@ -487,7 +498,7 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     # Create a mapping of field ID to field name
     field_map = {}
     field_result[:fields].each do |field|
-      trimmed_name = field['name'] ? field['name'].rstrip : field['name']
+      trimmed_name = field['name']&.rstrip
       field_map[field['id']] = {
         name: trimmed_name,
         type: field['schema'] ? field['schema']['type'] : 'unknown',
@@ -527,7 +538,7 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     end
     
     AdfLogger.info ""
-    AdfLogger.info "USAGE EXAMPLE: jiraIssuesTable:[project = DEMO,fields=key,summary,status,customfield_10984]"
+    AdfLogger.info "USAGE EXAMPLE: jiraIssuesTable::['project = DEMO', fields='key,summary,status,customfield_10984']"
     AdfLogger.info "============="
     
     @@field_info_printed = true

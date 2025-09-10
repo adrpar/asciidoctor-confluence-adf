@@ -170,7 +170,7 @@ class JiraMacroTest < Minitest::Test
     setup_jira_env
     
     Net::HTTP.stub :start, mock_api_responses(basic_jira_issues) do
-      html = load_and_convert_jira_table('jiraIssuesTable::"project = DEMO ORDER BY created DESC"[fields="key,summary,status"]')
+      html = load_and_convert_jira_table("jiraIssuesTable::['project = DEMO ORDER BY created DESC', fields='key,summary,status']")
       
       assert_includes html, 'DEMO-1'
       assert_includes html, 'First issue'
@@ -186,8 +186,8 @@ class JiraMacroTest < Minitest::Test
     ENV.delete('CONFLUENCE_API_TOKEN')
     ENV.delete('CONFLUENCE_USER_EMAIL')
 
-    html = load_and_convert_jira_table('jiraIssuesTable::"project = DEMO ORDER BY created DESC"[fields="key,summary,status"]')
-    assert_includes html, 'jiraIssuesTable::"project = DEMO ORDER BY created DESC"[fields="key,summary,status"]'
+    html = load_and_convert_jira_table("jiraIssuesTable::['project = DEMO ORDER BY created DESC', fields='key,summary,status']")
+    assert_includes html, "jiraIssuesTable::['project = DEMO ORDER BY created DESC', fields='key,summary,status']"
   end
   
   def test_jira_issues_table_macro_with_document_attributes
@@ -200,7 +200,7 @@ class JiraMacroTest < Minitest::Test
       :confluence-api-token: test-token
       :confluence-user-email: test@example.com
       
-      jiraIssuesTable::"project = DEMO ORDER BY created DESC"[fields="key,summary,status"]
+      jiraIssuesTable::['project = DEMO ORDER BY created DESC', fields='key,summary,status']
     ADOC
     
     Net::HTTP.stub :start, mock_api_responses(basic_jira_issues) do
@@ -226,7 +226,7 @@ class JiraMacroTest < Minitest::Test
       :confluence-api-token: attr-token
       :confluence-user-email: attr@example.com
       
-      jiraIssuesTable::"project = DEMO"[fields="key,summary,status"]
+      jiraIssuesTable::['project = DEMO', fields='key,summary,status']
     ADOC
     
     # Create mock for HTTP requests to verify correct URLs are used
@@ -284,7 +284,7 @@ class JiraMacroTest < Minitest::Test
 
     # Stub Net::HTTP.start to return our mock
     Net::HTTP.stub :start, mock_api_responses(complex_issues, fields) do
-      html = load_and_convert_jira_table('jiraIssuesTable::"project = DEMO"[fields="key,summary,description,status"]')
+      html = load_and_convert_jira_table("jiraIssuesTable::['project = DEMO', fields='key,summary,description,status']")
 
       # Test various elements
       assert_formatting_elements(html)
@@ -328,7 +328,7 @@ class JiraMacroTest < Minitest::Test
     }
 
     Net::HTTP.stub :start, mock_api_responses(link_issues) do
-      html = load_and_convert_jira_table('jiraIssuesTable::"project = DEMO"[fields="key,summary,description"]')
+      html = load_and_convert_jira_table("jiraIssuesTable::['project = DEMO', fields='key,summary,description']")
 
       # Test links are properly converted
       assert_link_formatting(html)
@@ -388,7 +388,7 @@ class JiraMacroTest < Minitest::Test
 
     Net::HTTP.stub :start, mock_api_responses(custom_field_issues, custom_fields) do
       html = load_and_convert_jira_table(
-        'jiraIssuesTable::"project = DEMO"[fields="key,customfield_10001,customfield_10002,customfield_10003,customfield_10004"]'
+        "jiraIssuesTable::['project = DEMO', fields='key,customfield_10001,customfield_10002,customfield_10003,customfield_10004']"
       )
 
       # Test custom field formatting
@@ -419,7 +419,7 @@ class JiraMacroTest < Minitest::Test
     ]
 
     Net::HTTP.stub :start, mock_api_responses(issues, fields_meta) do
-      html = load_and_convert_jira_table('jiraIssuesTable::"project = DEMO"[fields="key,Summary,My Custom Field,status"]')
+      html = load_and_convert_jira_table("jiraIssuesTable::['project = DEMO', fields='key,Summary,My Custom Field,status']")
       assert_includes html, 'DEMO-9'
       assert_includes html, 'Summary Text'
       assert_includes html, 'Custom Value'
@@ -440,7 +440,7 @@ class JiraMacroTest < Minitest::Test
       { 'id' => 'customfield_55555', 'name' => 'Custom Field With Space   ', 'custom' => true }
     ]
     Net::HTTP.stub :start, mock_api_responses(issues, fields_meta) do
-      html = load_and_convert_jira_table('jiraIssuesTable::"project = DEMO"[fields="key,Summary,Custom Field With Space,status"]')
+      html = load_and_convert_jira_table("jiraIssuesTable::['project = DEMO', fields='key,Summary,Custom Field With Space,status']")
       assert_includes html, 'DEMO-11'
       assert_includes html, 'Spaced Value'
       # Header should not include trailing spaces
@@ -475,6 +475,41 @@ class JiraMacroTest < Minitest::Test
       assert_includes html, 'DEMO-12'
       assert_includes html, 'Complex, Field Name'
       assert_includes html, "Another 'Quoted' Field"
+
+      html = load_and_convert_jira_table("jiraIssuesTable::['project = DEMO', fields='key,Summary,\"Complex, Field Name\",\"Another \\'Quoted\\' Field\"']")
+      assert_includes html, 'DEMO-12'
+      assert_includes html, 'Complex, Field Name'
+      assert_includes html, "Another 'Quoted' Field"
+    end
+  end
+
+  def test_jira_issues_table_field_parsing_with_inner_single_quotes_in_double_quoted_field
+    setup_jira_env
+    issues = {
+      'issues' => [
+        {
+          'key' => 'DEMO-13',
+          'fields' => {
+            'summary' => 'Inner quotes test',
+            'customfield_66666' => 'Value A',
+            'customfield_77778' => 'Value B'
+          }
+        }
+      ]
+    }
+    fields_meta = [
+      { 'id' => 'summary', 'name' => 'Summary' },
+      { 'id' => 'customfield_66666', 'name' => 'Complex, Field Name', 'custom' => true },
+      { 'id' => 'customfield_77778', 'name' => "Another 'Quoted' Field", 'custom' => true }
+    ]
+    Net::HTTP.stub :start, mock_api_responses(issues, fields_meta) do
+      # Double-quoted field containing a single-quoted word should remain unchanged by normalization
+      macro = "jiraIssuesTable::['project = DEMO', fields='key,Summary,\"Complex, Field Name\",\"Another \\'Quoted\\' Field\"']"
+      html = load_and_convert_jira_table(macro)
+      assert_includes html, 'DEMO-13'
+      assert_includes html, 'Complex, Field Name'
+      assert_includes html, "Another 'Quoted' Field"
+      refute_includes html, 'Another "Quoted" Field', 'Inner single quotes were incorrectly converted to double quotes'
     end
   end
 
@@ -485,9 +520,9 @@ class JiraMacroTest < Minitest::Test
     fields_meta = standard_fields
 
     Net::HTTP.stub :start, mock_api_responses(issues, fields_meta) do
-      html = load_and_convert_jira_table('jiraIssuesTable::"project = DEMO"[fields="key,summary,NotAField,status"]')
+      html = load_and_convert_jira_table("jiraIssuesTable::['project = DEMO', fields='key,summary,NotAField,status']")
       # Placeholder currently renders with bracketed target and comma separated attributes
-      assert_includes html, 'jiraIssuesTable::["project = DEMO", fields="key,summary,NotAField,status"]'
+      assert_includes html, "jiraIssuesTable::['project = DEMO', fields='key,summary,NotAField,status']"
     end
   end
 
@@ -510,7 +545,7 @@ class JiraMacroTest < Minitest::Test
     ]
 
     Net::HTTP.stub :start, mock_api_responses(issues, fields_meta) do
-      html = load_and_convert_jira_table('jiraIssuesTable::["project = DEMO", fields="key,summary,customfield_77777"]')
+      html = load_and_convert_jira_table("jiraIssuesTable::['project = DEMO', fields='key,summary,customfield_77777']")
       assert_includes html, 'DEMO-10'
       assert_includes html, 'Direct Custom'
       assert_includes html, 'Direct Custom Field'
@@ -600,7 +635,7 @@ class JiraMacroTest < Minitest::Test
     # Stub Net::HTTP.start to return our mock
     Net::HTTP.stub :start, mock_api_responses(complex_issues, fields) do
       # Use ADF backend for conversion
-      adoc_with_macros = 'jiraIssuesTable::["project = DEMO",fields="key,summary,description,status"]'
+      adoc_with_macros = "jiraIssuesTable::['project = DEMO', fields='key,summary,description,status']"
       doc = Asciidoctor.load(adoc_with_macros, safe: :safe, backend: 'adf', extensions: proc { block_macro JiraIssuesTableBlockMacro })
       adf_json = doc.converter.convert(doc, 'document')
 
@@ -730,7 +765,7 @@ class JiraMacroTest < Minitest::Test
     # Stub Net::HTTP.start to return the mock response
     Net::HTTP.stub :start, mock_api_responses(mock_issues) do
       # Test with the title attribute
-      adoc_content = 'jiraIssuesTable::["project = DEMO", fields="key,summary,status", title="Demo Project Issues"]'
+      adoc_content = "jiraIssuesTable::['project = DEMO', fields='key,summary,status', title='Demo Project Issues']"
       html = load_and_convert_jira_table(adoc_content)
 
       # Verify the title is rendered as bold text
@@ -788,7 +823,7 @@ class JiraMacroTest < Minitest::Test
     }
 
     Net::HTTP.stub :start, mock_api_responses(issues_with_adf) do
-    html = load_and_convert_jira_table('jiraIssuesTable::["project = DEMO", fields="key,summary,description,status"]')
+    html = load_and_convert_jira_table("jiraIssuesTable::['project = DEMO', fields='key,summary,description,status']")
 
   # Accept both legacy expected snippet (without content wrapper) and current Asciidoctor output (with wrapper)
   assert_includes html, 'This is a description in ADF.'
