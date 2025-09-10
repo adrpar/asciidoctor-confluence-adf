@@ -53,10 +53,7 @@ class AppfoxWorkflowMetadataInlineMacro < Asciidoctor::Extensions::InlineMacroPr
               "schemaVersion" => { "value" => DEFAULT_SCHEMA_VERSION },
               "indexedMacroParams" => indexed_macro_params,
               "placeholder" => [
-                {
-                  "type" => "icon",
-                  "data" => { "url" => DEFAULT_ICON_URL }
-                }
+                { "type" => "icon", "data" => { "url" => DEFAULT_ICON_URL } }
               ],
               "title" => DEFAULT_TITLE
             }
@@ -128,10 +125,7 @@ class AppfoxWorkflowApproversTableInlineMacro < Asciidoctor::Extensions::InlineM
         extension_attrs["parameters"]["macroMetadata"]["indexedMacroParams"] = indexed_macro_params
       end
 
-      {
-        "type" => "extension",
-        "attrs" => extension_attrs
-      }.to_json
+      { "type" => "extension", "attrs" => extension_attrs }.to_json
     else
       "workflowApproval:#{target}[]"
     end
@@ -170,10 +164,7 @@ class AppfoxWorkflowChangeTableInlineMacro < Asciidoctor::Extensions::InlineMacr
         }
       }
 
-      {
-        "type" => "extension",
-        "attrs" => extension_attrs
-      }.to_json
+      { "type" => "extension", "attrs" => extension_attrs }.to_json
     else
       "workflowChangeTable:#{target}[]"
     end

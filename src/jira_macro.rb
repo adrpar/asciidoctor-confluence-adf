@@ -59,17 +59,7 @@ class AtlasMentionInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
       )
       user = client.find_user_by_fullname(name)
 
-      if user
-        {
-          "type" => "mention",
-          "attrs" => {
-            "id" => user["id"],
-            "text" => "@#{user["displayName"]}"
-          }
-        }.to_json
-      else
-        "@#{name}"
-      end
+      return user ? { "type" => "mention", "attrs" => { "id" => user["id"], "text" => "@#{user["displayName"]}" } }.to_json : "@#{name}"
     else
       "@#{name}"
     end

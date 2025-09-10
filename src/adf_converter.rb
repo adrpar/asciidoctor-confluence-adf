@@ -3,9 +3,12 @@ require 'json'
 require 'securerandom'
 require 'cgi'
 require_relative 'image_handler'
+require_relative 'adf_builder'
+require_relative 'inline_anchor_helper'
 
 class AdfConverter < Asciidoctor::Converter::Base
   include ImageHandler
+  include InlineAnchorHelper
   register_for 'adf'
 
   DEFAULT_MARK_BACKGROUND_COLOR = '#FFFF00' # yellow
@@ -68,65 +71,38 @@ class AdfConverter < Asciidoctor::Converter::Base
     end
 
     # Return the document with the collected nodes
-    {
-      "version" => 1,
-      "type" => "doc",
-      "content" => self.node_list.compact.empty? ? [] : self.node_list.compact
-    }.to_json
+    AdfBuilder.serialize_document(self.node_list.compact).to_json
   end
 
   def convert_paragraph(node)
-    self.node_list << create_paragraph_node(parse_or_escape(node.content))
+    self.node_list << AdfBuilder.paragraph_node(parse_or_escape(node.content))
   end
 
   def convert_section(node)
     anchor = node.id ? convert_anchor(node) : nil
 
     # Create the heading for the section
-    self.node_list << {
-      "type" => "heading",
-      "attrs" => { "level" => node.level + 1 },
-      "content" => [
-        create_text_node(node.title),
-        anchor
-      ].compact
-    }
+    self.node_list << AdfBuilder.heading_node(node.level + 1, [create_text_node(node.title), anchor].compact)
 
     node.blocks.map { |block| convert(block) }
   end
 
   def convert_ulist(node)
-    self.node_list << {
-      "type" => "bulletList",
-      "content" => node.items.map do |item|
-        {
-          "type" => "listItem",
-          "content" => [
-            create_paragraph_node(parse_or_escape(item.text))
-          ]
-        }
-      end
-    }
+    self.node_list << AdfBuilder.bullet_list(
+      node.items.map { |item| AdfBuilder.list_item(parse_or_escape(item.text)) }
+    )
   end
 
   def convert_olist(node)
-    self.node_list << {
-      "type" => "orderedList",
-      "content" => node.items.map do |item|
-        {
-          "type" => "listItem",
-          "content" => [
-            create_paragraph_node(parse_or_escape(item.text))
-          ]
-        }
-      end
-    }
+    self.node_list << AdfBuilder.ordered_list(
+      node.items.map { |item| AdfBuilder.list_item(parse_or_escape(item.text)) }
+    )
   end
 
   def convert_table(node)
-  # Ensure downstream parsing (e.g., AsciiDoc cells) has access to the current document context
-  previous_document = @current_document
-  @current_document = node.document
+    # Ensure downstream parsing (e.g., AsciiDoc cells) has access to the current document context
+    previous_document = @current_document
+    @current_document = node.document
     table_content = [
       *convert_table_head_rows(node.rows[:head]),
       *convert_table_body_rows(node.rows[:body])
@@ -146,20 +122,14 @@ class AdfConverter < Asciidoctor::Converter::Base
   def convert_table_head_rows(head_rows)
     return [] unless head_rows && !head_rows.empty?
     head_rows.map do |row|
-      {
-        "type" => "tableRow",
-        "content" => row.map { |cell| convert_table_header_cell(cell) }
-      }
+    AdfBuilder.table_row(row.map { |cell| convert_table_header_cell(cell) })
     end
   end
 
   def convert_table_body_rows(body_rows)
     return [] unless body_rows && !body_rows.empty?
     body_rows.map do |row|
-      {
-        "type" => "tableRow",
-        "content" => row.map { |cell| convert_table_body_cell(cell) }
-      }
+    AdfBuilder.table_row(row.map { |cell| convert_table_body_cell(cell) })
     end
   end
 
@@ -168,13 +138,7 @@ class AdfConverter < Asciidoctor::Converter::Base
       "colspan" => cell.colspan || 1,
       "rowspan" => cell.rowspan || 1
     }
-    {
-      "type" => "tableHeader",
-      "attrs" => cell_attrs,
-      "content" => [
-        create_paragraph_node(parse_or_escape(cell.text))
-      ]
-    }
+    AdfBuilder.table_cell('tableHeader', cell_attrs['colspan'], cell_attrs['rowspan'], [AdfBuilder.paragraph_node(parse_or_escape(cell.text))])
   end
 
   def convert_table_body_cell(cell)
@@ -213,35 +177,14 @@ class AdfConverter < Asciidoctor::Converter::Base
         cell_content_nodes = [create_paragraph_node(parse_or_escape(cell.text))]
       end
       
-      return {
-        "type" => cell_type,
-        "attrs" => {
-          "colspan" => cell.colspan || 1,
-          "rowspan" => cell.rowspan || 1
-        },
-        "content" => cell_content_nodes
-      }
+      return AdfBuilder.table_cell(cell_type, cell.colspan || 1, cell.rowspan || 1, cell_content_nodes)
     end
     
-    {
-      "type" => cell_type,
-      "attrs" => {
-        "colspan" => cell.colspan || 1,
-        "rowspan" => cell.rowspan || 1
-      },
-      "content" => [
-        create_paragraph_node(parse_or_escape(cell.text))
-      ]
-    }
+    AdfBuilder.table_cell(cell_type, cell.colspan || 1, cell.rowspan || 1, [AdfBuilder.paragraph_node(parse_or_escape(cell.text))])
   end
 
   def convert_quote(node)
-    self.node_list << {
-      "type" => "blockquote",
-      "content" => [
-        create_paragraph_node(parse_or_escape(node.content))
-      ]
-    }
+    self.node_list << { "type" => "blockquote", "content" => [ AdfBuilder.paragraph_node(parse_or_escape(node.content)) ] }
   end
 
   # Image handling methods are now included from the ImageHandler module
@@ -251,13 +194,7 @@ class AdfConverter < Asciidoctor::Converter::Base
   def convert_admonition(node)
     panel_type = ADMONITION_TYPE_MAPPING[node.attr('name')] || "info" # Default to "info" if type is unknown
 
-    self.node_list << {
-      "type" => "panel",
-      "attrs" => { "panelType" => panel_type },
-      "content" => [
-        create_paragraph_node(parse_or_escape(node.content))
-      ]
-    }
+    self.node_list << AdfBuilder.panel_node(panel_type, parse_or_escape(node.content))
   end
 
   def convert_preamble(node)
@@ -267,9 +204,7 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def convert_page_break(node)
-    self.node_list << {
-      "type" => "rule"
-    }
+    self.node_list << { "type" => "rule" }
   end
 
   def convert_embedded(node)
@@ -295,21 +230,17 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def convert_toc(node)
-    # Add a Confluence TOC macro as an inlineExtension node
-    self.node_list << {
-      "type" => "inlineExtension",
-      "attrs" => {
-        "extensionType" => "com.atlassian.confluence.macro.core",
-        "extensionKey" => "toc",
-        "parameters" => {
-          "macroParams" => {},
-          "macroMetadata" => {
-            "schemaVersion" => { "value" => "1" },
-            "title" => "Table of Contents"
-          }
+    self.node_list << AdfBuilder.inline_extension(
+      extension_type: 'com.atlassian.confluence.macro.core',
+      extension_key: 'toc',
+      parameters: {
+        'macroParams' => {},
+        'macroMetadata' => {
+          'schemaVersion' => { 'value' => '1' },
+          'title' => 'Table of Contents'
         }
       }
-    }
+    )
   end
 
   def convert_anchor(node)
@@ -319,23 +250,20 @@ class AdfConverter < Asciidoctor::Converter::Base
     @anchors[node.id] = node
 
     # Generate the Confluence inline extension macro for the anchor
-    {
-      "type" => "inlineExtension",
-      "attrs" => {
-        "extensionType" => "com.atlassian.confluence.macro.core",
-        "extensionKey" => "anchor",
-        "parameters" => {
-          "macroParams" => {
-            "" => { "value" => node.id },
-            "legacyAnchorId" => { "value" => "LEGACY-#{node.id}" }
-          },
-          "macroMetadata" => {
-            "schemaVersion" => { "value" => "1" },
-            "title" => "Anchor"
-          }
+    AdfBuilder.inline_extension(
+      extension_type: 'com.atlassian.confluence.macro.core',
+      extension_key: 'anchor',
+      parameters: {
+        'macroParams' => {
+          '' => { 'value' => node.id },
+          'legacyAnchorId' => { 'value' => "LEGACY-#{node.id}" }
+        },
+        'macroMetadata' => {
+          'schemaVersion' => { 'value' => '1' },
+          'title' => 'Anchor'
         }
       }
-    }
+    )
   end
 
   def get_root_document node
@@ -346,35 +274,7 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def convert_inline_anchor(node)
-    link_text = case node.type
-    when :xref
-      unless (text = node.text)
-        if Asciidoctor::AbstractNode === (ref = (@refs ||= node.document.catalog[:refs])[refid = node.attributes['refid']] || (refid.nil_or_empty? ? (top = get_root_document node) : nil))
-          text = top ? nil : (ref && ref.title ? ref.title : %([#{refid}]))
-        else
-          text = %([#{refid}])
-        end
-      end
-      text
-    else
-      node.text || node.reftext || node.target
-    end
-    
-    href = case node.type
-    when :xref
-      @anchors && @anchors[refid] ? "##{refid}" : "##{refid}"
-    else
-      node.target
-    end
-
-    marks = [
-      {
-        "type" => "link",
-        "attrs" => { "href" => href }
-      }
-    ]
-
-    create_text_node(link_text, marks).to_json
+    build_link_from_inline_anchor(node)
   end
 
   def convert_inline_quoted(node)
@@ -393,27 +293,15 @@ class AdfConverter < Asciidoctor::Converter::Base
     mark_attrs = node.type == :mark ? { "color" => DEFAULT_MARK_BACKGROUND_COLOR } : nil
     marks = [{ "type" => mark_type, "attrs" => mark_attrs }.compact]
 
-    create_text_node(node.text, marks).to_json
+  create_text_node(node.text, marks).to_json
   end
 
   def convert_listing(node)
-    self.node_list << {
-      "type" => "codeBlock",
-      "attrs" => { "language" => node.attr('language') || "plaintext" },
-      "content" => [
-        create_text_node(node.content) # Escape newlines and quotes
-      ]
-    }
+    self.node_list << AdfBuilder.code_block_node(node.attr('language') || 'plaintext', node.content)
   end
 
   def convert_literal(node)
-    self.node_list << {
-      "type" => "codeBlock",
-      "attrs" => { "language" => node.attr('language') || "plaintext" },
-      "content" => [
-        create_text_node(node.content)
-      ]
-    }
+    self.node_list << AdfBuilder.code_block_node(node.attr('language') || 'plaintext', node.content)
   end
 
   def convert_pass(node)
@@ -487,7 +375,8 @@ class AdfConverter < Asciidoctor::Converter::Base
     node.compact
   end
 
+  # create_paragraph_node retained for backward usage in existing tests referencing private API
   def create_paragraph_node(content)
-    { "type" => "paragraph", "content" => content }
+    AdfBuilder.paragraph_node(content)
   end
 end

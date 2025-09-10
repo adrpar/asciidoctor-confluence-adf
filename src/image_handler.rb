@@ -1,4 +1,5 @@
 require 'fastimage'
+require_relative 'adf_builder'
 
 # Module for handling image conversion and dimension detection
 module ImageHandler
@@ -133,28 +134,18 @@ module ImageHandler
     width, height = detect_image_dimensions(node)
 
     # Build the node with the dimensions
-    self.node_list << {
-      "type" => "mediaSingle",
-      "attrs" => { 
-        "layout" => "wide",
-        "width" => width,
-        "widthType" => "pixel"
-      },
-      "content" => [
-        {
-          "type" => "media",
-          "attrs" => {
-            "type" => "file",
-            "id" => node.attr('target'),
-            "collection" => "attachments",
-            "alt" => node.attr('alt') || "",
-            "occurrenceKey" => node.attr('occurrenceKey') || SecureRandom.uuid,
-            "width" => width,
-            "height" => height
-          }.compact
-        }
-      ]
-    }
+    media = AdfBuilder.media(
+      {
+        'type' => 'file',
+        'id' => node.attr('target'),
+        'collection' => 'attachments',
+        'alt' => node.attr('alt') || '',
+        'occurrenceKey' => node.attr('occurrenceKey') || SecureRandom.uuid,
+        'width' => width,
+        'height' => height
+      }.compact
+    )
+    self.node_list << AdfBuilder.media_single(layout: 'wide', width: width, width_type: 'pixel', media_node: media)
   end
 
   # Convert an inline image node to ADF format
@@ -163,18 +154,17 @@ module ImageHandler
     width, height = detect_image_dimensions(node, nil, nil, true)
 
     # Build the node with the dimensions (possibly determined from the file)
-    {
-      "type" => "mediaInline",
-      "attrs" => {
-        "type" => "file",
-        "id" => node.target || "unknown-id",
-        "collection" => "attachments",
-        "alt" => node.attr('alt') || "",
-        "occurrenceKey" => node.attr('occurrenceKey') || SecureRandom.uuid,
-        "width" => width,
-        "height" => height,
-        "data" => node.attr('data') || {}
+    AdfBuilder.media_inline(
+      {
+        'type' => 'file',
+        'id' => node.target || 'unknown-id',
+        'collection' => 'attachments',
+        'alt' => node.attr('alt') || '',
+        'occurrenceKey' => node.attr('occurrenceKey') || SecureRandom.uuid,
+        'width' => width,
+        'height' => height,
+        'data' => node.attr('data') || {}
       }.compact
-    }.to_json
+    ).to_json
   end
 end
