@@ -14,6 +14,17 @@ class AdfConverter < Asciidoctor::Converter::Base
 
   DEFAULT_MARK_BACKGROUND_COLOR = '#FFFF00'
 
+  MARK_TYPE_MAP = {
+    strong: 'strong',
+    emphasis: 'em',
+    monospaced: 'code',
+    superscript: 'sup',
+    subscript: 'sub',
+    underline: 'underline',
+    strikethrough: 'strike',
+    mark: 'backgroundColor'
+  }.freeze
+
   ADMONITION_TYPE_MAPPING = {
     'note' => 'info',
     'tip' => 'info',
@@ -270,30 +281,21 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def convert_inline_quoted(node)
-    mark_type = case node.type
-                when :strong then "strong"
-                when :emphasis then "em"
-                when :monospaced then "code"
-                when :superscript then "sup"
-                when :subscript then "sub"
-                when :underline then "underline"
-                when :strikethrough then "strike"
-                when :mark then "backgroundColor"
-                else nil
-                end
-
-    mark_attrs = node.type == :mark ? { "color" => DEFAULT_MARK_BACKGROUND_COLOR } : nil
-    marks = [{ "type" => mark_type, "attrs" => mark_attrs }.compact]
-
-  create_text_node(node.text, marks).to_json
+    mark_type = MARK_TYPE_MAP[node.type]
+    marks = []
+    if mark_type
+      mark_attrs = (mark_type == 'backgroundColor') ? { 'color' => DEFAULT_MARK_BACKGROUND_COLOR } : nil
+      marks << { 'type' => mark_type, 'attrs' => mark_attrs }.compact
+    end
+    create_text_node(node.text, marks).to_json
   end
 
   def convert_listing(node)
-    self.node_list << build_code_block(node)
+    append_code_block(node)
   end
 
   def convert_literal(node)
-    self.node_list << build_code_block(node)
+    append_code_block(node)
   end
 
   def convert_pass(node)
@@ -324,9 +326,9 @@ class AdfConverter < Asciidoctor::Converter::Base
     AdfBuilder.paragraph_node(content)
   end
 
-  # DRY helper for listing & literal blocks
-  def build_code_block(node)
-    AdfBuilder.code_block_node(resolve_code_language(node), node.content)
+  # Unified code/literal handling
+  def append_code_block(node)
+    self.node_list << AdfBuilder.code_block_node(resolve_code_language(node), node.content)
   end
 
   def resolve_code_language(node)
