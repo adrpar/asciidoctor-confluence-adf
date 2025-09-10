@@ -1,5 +1,6 @@
 require 'asciidoctor'
 require 'asciidoctor/extensions'
+require_relative 'adf_logger'
 
 class AppfoxWorkflowMetadataInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
   use_dsl
@@ -21,14 +22,14 @@ class AppfoxWorkflowMetadataInlineMacro < Asciidoctor::Extensions::InlineMacroPr
     "transition" => "Transition Date",
     "pageid" => "Unique Page ID",
     "status" => "Workflow Status"
-  }
+  }.freeze
 
   def process parent, target, attrs
     raise ArgumentError, "Target cannot be nil" if target.nil?
     if KEYWORDS.key?(target.downcase)
       text = KEYWORDS[target.downcase]
     else
-      warn ">>> WARN: Unknown appfoxWorkflowMetadata keyword '#{target}'."
+      AdfLogger.warn "Unknown appfoxWorkflowMetadata keyword '#{target}'."
       text = nil
     end
 
@@ -53,10 +54,7 @@ class AppfoxWorkflowMetadataInlineMacro < Asciidoctor::Extensions::InlineMacroPr
               "schemaVersion" => { "value" => DEFAULT_SCHEMA_VERSION },
               "indexedMacroParams" => indexed_macro_params,
               "placeholder" => [
-                {
-                  "type" => "icon",
-                  "data" => { "url" => DEFAULT_ICON_URL }
-                }
+                { "type" => "icon", "data" => { "url" => DEFAULT_ICON_URL } }
               ],
               "title" => DEFAULT_TITLE
             }
@@ -84,12 +82,12 @@ class AppfoxWorkflowApproversTableInlineMacro < Asciidoctor::Extensions::InlineM
   OPTIONS = {
     "all" => nil, # All approvers for current workflow (no data param)
     "latest" => "Latest Approvals for Current Workflow"
-  }
+  }.freeze
 
   def process parent, target, attrs
     option = (target || '').downcase
     unless OPTIONS.key?(option)
-      warn ">>> WARN: Unknown workflowApproval option '#{target}'."
+      AdfLogger.warn "Unknown workflowApproval option '#{target}'."
       return "workflowApproval:#{target}[]"
     end
 
@@ -128,10 +126,7 @@ class AppfoxWorkflowApproversTableInlineMacro < Asciidoctor::Extensions::InlineM
         extension_attrs["parameters"]["macroMetadata"]["indexedMacroParams"] = indexed_macro_params
       end
 
-      {
-        "type" => "extension",
-        "attrs" => extension_attrs
-      }.to_json
+      { "type" => "extension", "attrs" => extension_attrs }.to_json
     else
       "workflowApproval:#{target}[]"
     end
@@ -170,10 +165,7 @@ class AppfoxWorkflowChangeTableInlineMacro < Asciidoctor::Extensions::InlineMacr
         }
       }
 
-      {
-        "type" => "extension",
-        "attrs" => extension_attrs
-      }.to_json
+      { "type" => "extension", "attrs" => extension_attrs }.to_json
     else
       "workflowChangeTable:#{target}[]"
     end

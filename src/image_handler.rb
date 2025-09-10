@@ -1,8 +1,10 @@
 require 'fastimage'
+require_relative 'adf_builder'
+require_relative 'adf_logger'
 
 # Module for handling image conversion and dimension detection
 module ImageHandler
-  include Asciidoctor::Logging
+  # Replace direct Asciidoctor logging with unified AdfLogger
   
   # Helper method to detect and calculate image dimensions
   def detect_image_dimensions(node, width = nil, height = nil, is_inline = false)
@@ -15,12 +17,12 @@ module ImageHandler
     begin
       doc = node.document
       
-      logger.debug "Image URI='#{node.normalize_system_path target}'"
+      AdfLogger.debug "Image URI='#{node.normalize_system_path target}'"
       unless is_inline
         imagesdir = doc.attr('imagesdir')
         base_dir = doc.base_dir
         doc_file = doc.respond_to?(:docfile) ? doc.docfile : nil
-        logger.debug "Image target='#{target}', base_dir='#{base_dir}', docfile='#{doc_file}', imagesdir='#{imagesdir}'"
+        AdfLogger.debug "Image target='#{target}', base_dir='#{base_dir}', docfile='#{doc_file}', imagesdir='#{imagesdir}'"
       end
       
       # Branch based on whether it's a remote URL
@@ -32,7 +34,7 @@ module ImageHandler
       end
     rescue => e
       type = is_inline ? "inline image" : "image"
-      logger.warn "Error determining #{type} dimensions for '#{target}': #{e.message}" unless is_inline
+      AdfLogger.warn "Error determining #{type} dimensions for '#{target}': #{e.message}" unless is_inline
     end
 
     [width, height]
@@ -42,27 +44,16 @@ module ImageHandler
     images_dir_attr = document.attr('imagesdir')
 
     unless is_inline
-      logger.debug "Resolving local image: target='#{target}', base_dir='#{document.base_dir}', imagesdir='#{images_dir_attr || ''}'"
+      AdfLogger.debug "Resolving local image: target='#{target}', base_dir='#{document.base_dir}', imagesdir='#{images_dir_attr || ''}'"
     end
 
-    # Create a list of potential paths to search for the image using Asciidoctor's path resolver.
-    search_paths = []
-
-    # Path 1: Relative to the imagesdir attribute. This is the highest priority.
-    # We construct the relative path first, then ask Asciidoctor to normalize it against the base_dir.
-    if images_dir_attr && !images_dir_attr.empty?
-      search_paths << document.normalize_system_path(File.join(images_dir_attr, target))
-    end
-
-    # Path 2: Relative to the document's base directory (fallback).
-    search_paths << document.normalize_system_path(target)
-
-    # Remove duplicates and find the first path that actually exists.
-    found_path = search_paths.compact.uniq.find { |path| File.exist?(path) }
+    # Build candidate paths via helper
+    search_paths = build_image_search_paths(document, target, images_dir_attr)
+    found_path = search_paths.find { |path| File.exist?(path) }
 
     if found_path
       unless is_inline
-        logger.info "SUCCESS: Found local image at: #{found_path}"
+        AdfLogger.info "SUCCESS: Found local image at: #{found_path}"
       end
       dimensions = FastImage.size(found_path)
       if dimensions
@@ -71,12 +62,22 @@ module ImageHandler
       end
     else
       unless is_inline
-        logger.warn "FAILURE: Could not find local image '#{target}'. Tried the following locations:"
-        search_paths.uniq.each { |path| logger.warn "  - #{path}" }
+        AdfLogger.warn "FAILURE: Could not find local image '#{target}'. Tried the following locations:"
+        search_paths.uniq.each { |path| AdfLogger.warn "  - #{path}" }
       end
     end
     
     [width, height]
+  end
+
+  # Centralizes construction of candidate image search paths. Order matters.
+  def build_image_search_paths(document, target, images_dir_attr)
+    paths = []
+    if images_dir_attr && !images_dir_attr.empty?
+      paths << document.normalize_system_path(File.join(images_dir_attr, target))
+    end
+    paths << document.normalize_system_path(target)
+    paths.compact.uniq
   end
   
   # Helper method to detect dimensions from a remote image URI
@@ -92,7 +93,7 @@ module ImageHandler
     rescue => e
       error_msg = "Could not determine size for remote image: #{image_location}"
       error_msg += ". Reason: #{e.message}" unless is_inline
-      logger.warn error_msg unless is_inline
+      AdfLogger.warn error_msg unless is_inline
     end
     
     [width, height]
@@ -133,28 +134,18 @@ module ImageHandler
     width, height = detect_image_dimensions(node)
 
     # Build the node with the dimensions
-    self.node_list << {
-      "type" => "mediaSingle",
-      "attrs" => { 
-        "layout" => "wide",
-        "width" => width,
-        "widthType" => "pixel"
-      },
-      "content" => [
-        {
-          "type" => "media",
-          "attrs" => {
-            "type" => "file",
-            "id" => node.attr('target'),
-            "collection" => "attachments",
-            "alt" => node.attr('alt') || "",
-            "occurrenceKey" => node.attr('occurrenceKey') || SecureRandom.uuid,
-            "width" => width,
-            "height" => height
-          }.compact
-        }
-      ]
-    }
+    media = AdfBuilder.media(
+      {
+        'type' => 'file',
+        'id' => node.attr('target'),
+        'collection' => 'attachments',
+        'alt' => node.attr('alt') || '',
+        'occurrenceKey' => node.attr('occurrenceKey') || SecureRandom.uuid,
+        'width' => width,
+        'height' => height
+      }.compact
+    )
+    self.node_list << AdfBuilder.media_single(layout: 'wide', width: width, width_type: 'pixel', media_node: media)
   end
 
   # Convert an inline image node to ADF format
@@ -163,18 +154,17 @@ module ImageHandler
     width, height = detect_image_dimensions(node, nil, nil, true)
 
     # Build the node with the dimensions (possibly determined from the file)
-    {
-      "type" => "mediaInline",
-      "attrs" => {
-        "type" => "file",
-        "id" => node.target || "unknown-id",
-        "collection" => "attachments",
-        "alt" => node.attr('alt') || "",
-        "occurrenceKey" => node.attr('occurrenceKey') || SecureRandom.uuid,
-        "width" => width,
-        "height" => height,
-        "data" => node.attr('data') || {}
+    AdfBuilder.media_inline(
+      {
+        'type' => 'file',
+        'id' => node.target || 'unknown-id',
+        'collection' => 'attachments',
+        'alt' => node.attr('alt') || '',
+        'occurrenceKey' => node.attr('occurrenceKey') || SecureRandom.uuid,
+        'width' => width,
+        'height' => height,
+        'data' => node.attr('data') || {}
       }.compact
-    }.to_json
+    ).to_json
   end
 end

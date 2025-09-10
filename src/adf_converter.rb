@@ -3,19 +3,35 @@ require 'json'
 require 'securerandom'
 require 'cgi'
 require_relative 'image_handler'
+require_relative 'adf_builder'
+require_relative 'inline_anchor_helper'
+require_relative 'asciidoc_table_cell_parser'
+require_relative 'text_or_json_parser'
 
 class AdfConverter < Asciidoctor::Converter::Base
   include ImageHandler
+  include InlineAnchorHelper
   register_for 'adf'
 
-  DEFAULT_MARK_BACKGROUND_COLOR = '#FFFF00' # yellow
+  DEFAULT_MARK_BACKGROUND_COLOR = '#FFFF00'
+
+  MARK_TYPE_MAP = {
+    strong: 'strong',
+    emphasis: 'em',
+    monospaced: 'code',
+    superscript: 'sup',
+    subscript: 'sub',
+    underline: 'underline',
+    strikethrough: 'strike',
+    mark: 'backgroundColor'
+  }.freeze
 
   ADMONITION_TYPE_MAPPING = {
-    "note" => "info",
-    "tip" => "info",
-    "warning" => "warning",
-    "important" => "error",
-    "caution" => "error"
+    'note' => 'info',
+    'tip' => 'info',
+    'warning' => 'warning',
+    'important' => 'error',
+    'caution' => 'error'
   }.freeze
 
   attr_accessor :node_list
@@ -23,6 +39,7 @@ class AdfConverter < Asciidoctor::Converter::Base
   def initialize(backend, opts = {})
     super
     @node_list = []
+    @text_or_json_parser = TextOrJsonParser.new { |txt| create_text_node(txt) }
     outfilesuffix '.adf'
   end
 
@@ -56,192 +73,82 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def convert_document(node)
-    # Process sections if present
     sectioned = node.sections
     if sectioned && (node.attr? 'toc') && (node.attr? 'toc-placement', 'auto')
       convert_toc(node)
     end
-    
-    # Process all blocks in the document
-    node.blocks.each do |block|
-      convert(block)
-    end
-
-    # Return the document with the collected nodes
-    {
-      "version" => 1,
-      "type" => "doc",
-      "content" => self.node_list.compact.empty? ? [] : self.node_list.compact
-    }.to_json
+    node.blocks.each { |block| convert(block) }
+    AdfBuilder.serialize_document(self.node_list.compact).to_json
   end
 
   def convert_paragraph(node)
-    self.node_list << create_paragraph_node(parse_or_escape(node.content))
+    self.node_list << AdfBuilder.paragraph_node(parse_or_escape(node.content))
   end
 
   def convert_section(node)
     anchor = node.id ? convert_anchor(node) : nil
-
-    # Create the heading for the section
-    self.node_list << {
-      "type" => "heading",
-      "attrs" => { "level" => node.level + 1 },
-      "content" => [
-        create_text_node(node.title),
-        anchor
-      ].compact
-    }
-
-    node.blocks.map { |block| convert(block) }
+    self.node_list << AdfBuilder.heading_node(node.level + 1, [create_text_node(node.title), anchor].compact)
+    node.blocks.each { |block| convert(block) }
   end
 
   def convert_ulist(node)
-    self.node_list << {
-      "type" => "bulletList",
-      "content" => node.items.map do |item|
-        {
-          "type" => "listItem",
-          "content" => [
-            create_paragraph_node(parse_or_escape(item.text))
-          ]
-        }
-      end
-    }
+    self.node_list << AdfBuilder.bullet_list(
+      node.items.map { |item| AdfBuilder.list_item(parse_or_escape(item.text)) }
+    )
   end
 
   def convert_olist(node)
-    self.node_list << {
-      "type" => "orderedList",
-      "content" => node.items.map do |item|
-        {
-          "type" => "listItem",
-          "content" => [
-            create_paragraph_node(parse_or_escape(item.text))
-          ]
-        }
-      end
-    }
+    self.node_list << AdfBuilder.ordered_list(
+      node.items.map { |item| AdfBuilder.list_item(parse_or_escape(item.text)) }
+    )
   end
 
   def convert_table(node)
-  # Ensure downstream parsing (e.g., AsciiDoc cells) has access to the current document context
-  previous_document = @current_document
-  @current_document = node.document
-    table_content = [
-      *convert_table_head_rows(node.rows[:head]),
-      *convert_table_body_rows(node.rows[:body])
-    ]
-    
-    table_node = {
-      "type" => "table",
-      "content" => table_content
-    }
-    
-    self.node_list << table_node
+    # Ensure downstream parsing (e.g., AsciiDoc cells) has access to the current document context
+    previous_document = @current_document
+    @current_document = node.document
+    table_content = convert_table_rows(node.rows)
+    self.node_list << { 'type' => 'table', 'content' => table_content }
   ensure
     # Restore previous document context
     @current_document = previous_document
   end
 
-  def convert_table_head_rows(head_rows)
-    return [] unless head_rows && !head_rows.empty?
-    head_rows.map do |row|
-      {
-        "type" => "tableRow",
-        "content" => row.map { |cell| convert_table_header_cell(cell) }
-      }
+  def convert_table_rows(rows_hash)
+    return [] unless rows_hash
+    out = []
+    parser = AsciidocTableCellParser.new(converter: self, current_document: @current_document)
+
+    %i[head body].each do |section|
+      rows = rows_hash[section]
+      next unless rows && !rows.empty?
+      rows.each do |row|
+        force_header = (section == :head)
+        out << AdfBuilder.table_row(row.map { |cell| build_table_cell(cell, parser, force_header: force_header) })
+      end
     end
+    out
   end
 
-  def convert_table_body_rows(body_rows)
-    return [] unless body_rows && !body_rows.empty?
-    body_rows.map do |row|
-      {
-        "type" => "tableRow",
-        "content" => row.map { |cell| convert_table_body_cell(cell) }
-      }
-    end
-  end
-
-  def convert_table_header_cell(cell)
-    cell_attrs = {
-      "colspan" => cell.colspan || 1,
-      "rowspan" => cell.rowspan || 1
-    }
-    {
-      "type" => "tableHeader",
-      "attrs" => cell_attrs,
-      "content" => [
-        create_paragraph_node(parse_or_escape(cell.text))
-      ]
-    }
-  end
-
-  def convert_table_body_cell(cell)
-    cell_type = (cell.style == :header) ? "tableHeader" : "tableCell"
-    
-    if cell.style == :asciidoc
-      original_node_list = self.node_list.dup
-      self.node_list = []
-      
-      # Check if blocks are empty but text is present - common case with a| cells
-      if (cell.blocks.empty? || cell.blocks.nil?) && !cell.text.empty?
-        # Parse the text content into blocks using a temporary document, but
-        # propagate the parent document context (attributes, base_dir, safe mode)
-        load_opts = {
-          safe: (@current_document&.safe || :safe),
-          backend: 'adf',
-          attributes: (@current_document ? @current_document.attributes.dup : {}),
-          base_dir: (@current_document&.base_dir)
-        }.compact
-        cell_doc = Asciidoctor.load(cell.text, **load_opts)
-        
-        cell_doc.blocks.each do |block|
-          convert(block)
-        end
+  def build_table_cell(cell, parser, force_header: false)
+    type = force_header ? 'tableHeader' : cell_type(cell)
+    colspan, rowspan = table_cell_spans(cell)
+    content_nodes =
+      if cell.style == :asciidoc
+        parser.parse(cell)
       else
-        cell.blocks.each do |block|
-          convert(block)
-        end
+        [AdfBuilder.paragraph_node(parse_or_escape(cell.text))]
       end
-      
-      cell_content_nodes = self.node_list
-      
-      self.node_list = original_node_list
-      
-      if cell_content_nodes.empty? && !cell.text.empty?
-        cell_content_nodes = [create_paragraph_node(parse_or_escape(cell.text))]
-      end
-      
-      return {
-        "type" => cell_type,
-        "attrs" => {
-          "colspan" => cell.colspan || 1,
-          "rowspan" => cell.rowspan || 1
-        },
-        "content" => cell_content_nodes
-      }
-    end
-    
-    {
-      "type" => cell_type,
-      "attrs" => {
-        "colspan" => cell.colspan || 1,
-        "rowspan" => cell.rowspan || 1
-      },
-      "content" => [
-        create_paragraph_node(parse_or_escape(cell.text))
-      ]
-    }
+    AdfBuilder.table_cell(type, colspan, rowspan, content_nodes)
+  end
+
+  def cell_type(cell)
+    return 'tableHeader' if cell.style == :header
+    cell.style == :asciidoc && cell.role == 'header' ? 'tableHeader' : 'tableCell'
   end
 
   def convert_quote(node)
-    self.node_list << {
-      "type" => "blockquote",
-      "content" => [
-        create_paragraph_node(parse_or_escape(node.content))
-      ]
-    }
+    self.node_list << { "type" => "blockquote", "content" => [ AdfBuilder.paragraph_node(parse_or_escape(node.content)) ] }
   end
 
   # Image handling methods are now included from the ImageHandler module
@@ -251,13 +158,7 @@ class AdfConverter < Asciidoctor::Converter::Base
   def convert_admonition(node)
     panel_type = ADMONITION_TYPE_MAPPING[node.attr('name')] || "info" # Default to "info" if type is unknown
 
-    self.node_list << {
-      "type" => "panel",
-      "attrs" => { "panelType" => panel_type },
-      "content" => [
-        create_paragraph_node(parse_or_escape(node.content))
-      ]
-    }
+    self.node_list << AdfBuilder.panel_node(panel_type, parse_or_escape(node.content))
   end
 
   def convert_preamble(node)
@@ -267,9 +168,7 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def convert_page_break(node)
-    self.node_list << {
-      "type" => "rule"
-    }
+    self.node_list << { "type" => "rule" }
   end
 
   def convert_embedded(node)
@@ -295,21 +194,17 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def convert_toc(node)
-    # Add a Confluence TOC macro as an inlineExtension node
-    self.node_list << {
-      "type" => "inlineExtension",
-      "attrs" => {
-        "extensionType" => "com.atlassian.confluence.macro.core",
-        "extensionKey" => "toc",
-        "parameters" => {
-          "macroParams" => {},
-          "macroMetadata" => {
-            "schemaVersion" => { "value" => "1" },
-            "title" => "Table of Contents"
-          }
+    self.node_list << AdfBuilder.inline_extension(
+      extension_type: 'com.atlassian.confluence.macro.core',
+      extension_key: 'toc',
+      parameters: {
+        'macroParams' => {},
+        'macroMetadata' => {
+          'schemaVersion' => { 'value' => '1' },
+          'title' => 'Table of Contents'
         }
       }
-    }
+    )
   end
 
   def convert_anchor(node)
@@ -319,23 +214,20 @@ class AdfConverter < Asciidoctor::Converter::Base
     @anchors[node.id] = node
 
     # Generate the Confluence inline extension macro for the anchor
-    {
-      "type" => "inlineExtension",
-      "attrs" => {
-        "extensionType" => "com.atlassian.confluence.macro.core",
-        "extensionKey" => "anchor",
-        "parameters" => {
-          "macroParams" => {
-            "" => { "value" => node.id },
-            "legacyAnchorId" => { "value" => "LEGACY-#{node.id}" }
-          },
-          "macroMetadata" => {
-            "schemaVersion" => { "value" => "1" },
-            "title" => "Anchor"
-          }
+    AdfBuilder.inline_extension(
+      extension_type: 'com.atlassian.confluence.macro.core',
+      extension_key: 'anchor',
+      parameters: {
+        'macroParams' => {
+          '' => { 'value' => node.id },
+          'legacyAnchorId' => { 'value' => "LEGACY-#{node.id}" }
+        },
+        'macroMetadata' => {
+          'schemaVersion' => { 'value' => '1' },
+          'title' => 'Anchor'
         }
       }
-    }
+    )
   end
 
   def get_root_document node
@@ -346,74 +238,25 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def convert_inline_anchor(node)
-    link_text = case node.type
-    when :xref
-      unless (text = node.text)
-        if Asciidoctor::AbstractNode === (ref = (@refs ||= node.document.catalog[:refs])[refid = node.attributes['refid']] || (refid.nil_or_empty? ? (top = get_root_document node) : nil))
-          text = top ? nil : (ref && ref.title ? ref.title : %([#{refid}]))
-        else
-          text = %([#{refid}])
-        end
-      end
-      text
-    else
-      node.text || node.reftext || node.target
-    end
-    
-    href = case node.type
-    when :xref
-      @anchors && @anchors[refid] ? "##{refid}" : "##{refid}"
-    else
-      node.target
-    end
-
-    marks = [
-      {
-        "type" => "link",
-        "attrs" => { "href" => href }
-      }
-    ]
-
-    create_text_node(link_text, marks).to_json
+    build_link_from_inline_anchor(node)
   end
 
   def convert_inline_quoted(node)
-    mark_type = case node.type
-                when :strong then "strong"
-                when :emphasis then "em"
-                when :monospaced then "code"
-                when :superscript then "sup"
-                when :subscript then "sub"
-                when :underline then "underline"
-                when :strikethrough then "strike"
-                when :mark then "backgroundColor"
-                else nil
-                end
-
-    mark_attrs = node.type == :mark ? { "color" => DEFAULT_MARK_BACKGROUND_COLOR } : nil
-    marks = [{ "type" => mark_type, "attrs" => mark_attrs }.compact]
-
+    mark_type = MARK_TYPE_MAP[node.type]
+    marks = []
+    if mark_type
+      mark_attrs = (mark_type == 'backgroundColor') ? { 'color' => DEFAULT_MARK_BACKGROUND_COLOR } : nil
+      marks << { 'type' => mark_type, 'attrs' => mark_attrs }.compact
+    end
     create_text_node(node.text, marks).to_json
   end
 
   def convert_listing(node)
-    self.node_list << {
-      "type" => "codeBlock",
-      "attrs" => { "language" => node.attr('language') || "plaintext" },
-      "content" => [
-        create_text_node(node.content) # Escape newlines and quotes
-      ]
-    }
+    append_code_block(node)
   end
 
   def convert_literal(node)
-    self.node_list << {
-      "type" => "codeBlock",
-      "attrs" => { "language" => node.attr('language') || "plaintext" },
-      "content" => [
-        create_text_node(node.content)
-      ]
-    }
+    append_code_block(node)
   end
 
   def convert_pass(node)
@@ -425,58 +268,11 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def parse_or_escape(text)
-    content_array = []
-    buffer = ""
-    json_buffer = ""
-    inside_json = false
-    json_depth = 0
-
-    text = CGI.unescapeHTML(text)
-
-    text.each_char do |char|
-      if inside_json
-        json_buffer << char
-        if char == '{' || char == '['
-          json_depth += 1
-        elsif char == '}' || char == ']'
-          json_depth -= 1
-          if json_depth.zero?
-            parse_json_buffer(json_buffer, buffer, content_array)
-            json_buffer.clear
-            inside_json = false
-          end
-        end
-      else
-        if char == '{' || char == '['
-          inside_json = true
-          json_depth += 1
-          json_buffer << char
-        else
-          buffer << char
-        end
-      end
-    end
-
-    content_array << create_text_node(buffer) unless buffer.empty?
-    content_array
+    @text_or_json_parser.parse(text)
   end
 
   private
 
-  def parse_json_buffer(json_buffer, buffer, content_array)
-    begin
-      parsed_json = JSON.parse(json_buffer)
-      if parsed_json.empty?
-        buffer << json_buffer
-      else
-        content_array << create_text_node(buffer) unless buffer.empty?
-        content_array << parsed_json unless parsed_json.empty?
-        buffer.clear
-      end
-    rescue JSON::ParserError
-      buffer << json_buffer
-    end
-  end
 
   def create_text_node(text, marks = nil)
     raise ArgumentError, "Text cannot be nil or empty" if text.nil? || text.empty?
@@ -488,6 +284,21 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def create_paragraph_node(content)
-    { "type" => "paragraph", "content" => content }
+    AdfBuilder.paragraph_node(content)
+  end
+
+  # Unified code/literal handling
+  def append_code_block(node)
+    self.node_list << AdfBuilder.code_block_node(resolve_code_language(node), node.content)
+  end
+
+  def resolve_code_language(node)
+    lang = node.attr('language')
+    lang = nil if lang.is_a?(String) && lang.strip.empty?
+    lang || 'plaintext'
+  end
+
+  def table_cell_spans(cell)
+    [cell.colspan || 1, cell.rowspan || 1]
   end
 end
