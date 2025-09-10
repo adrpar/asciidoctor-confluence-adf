@@ -7,6 +7,7 @@ require 'csv'
 require_relative 'confluence_client'
 require_relative 'adf_to_asciidoc'
 require_relative 'adf_logger'
+require_relative 'jira_support'
 
 class JiraInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
   use_dsl
@@ -80,19 +81,19 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
   def process(parent, target, attrs)
     return handle_invalid_attributes(parent, target, attrs) unless valid_attributes?(attrs)
 
-    credentials = get_credentials(parent)
-    return handle_missing_credentials(parent, target, attrs) unless credentials_valid?(credentials)
+    credentials = JiraCredentials.from_document(parent.document)
+    return handle_missing_credentials(parent, target, attrs) unless credentials.valid?
 
     user_fields = parse_fields(attrs)
     jql = parse_jql(target, attrs)
     return handle_missing_jql(parent, target, attrs) if jql.nil? || jql.empty?
 
-    client = create_jira_client(credentials)
+    client = create_jira_client(credentials.to_h)
 
     # Fetch field metadata before resolving user supplied field names
     field_result = client.get_jira_fields
 
-    resolved_fields, unknown_fields = resolve_and_normalize_fields(user_fields, field_result)
+    resolved_fields, unknown_fields = JiraFieldResolver.new(field_result).resolve(user_fields)
     if !unknown_fields.empty?
       print_field_information_for_debugging([], field_result)
       AdfLogger.error "Unknown Jira field name(s): #{unknown_fields.map { |f| '"' + f + '"' }.join(', ')}. Use an exact field name as shown above or the custom field id (e.g. customfield_12345)."
@@ -105,7 +106,7 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     )
 
     if api_query_successful?(result)
-      table_content = build_table(result[:data]['issues'], resolved_fields, field_result, credentials[:base_url])
+      table_content = build_table(result[:data]['issues'], resolved_fields, field_result, credentials.base_url)
 
       # Add bold title if specified
       if attrs['title']
@@ -200,9 +201,6 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     end
   end
 
-  def credentials_valid?(credentials)
-    !credentials[:base_url].nil? && !credentials[:api_token].nil? && !credentials[:user_email].nil?
-  end
 
   def handle_invalid_attributes(parent, target, attrs)
     # Attempt to recover JQL from positional attribute if provided
@@ -226,14 +224,6 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     create_paragraph(parent, "jiraIssuesTable::['#{target}', fields='#{attrs['fields']}']", {})
   end
 
-  def get_credentials(parent)
-    {
-      base_url: parent.document.attr('jira-base-url') || ENV['JIRA_BASE_URL'],
-      confluence_base_url: parent.document.attr('confluence-base-url') || parent.document.attr('jira-base-url') || ENV['CONFLUENCE_BASE_URL'] || ENV['JIRA_BASE_URL'],
-      api_token: parent.document.attr('confluence-api-token') || ENV['CONFLUENCE_API_TOKEN'],
-      user_email: parent.document.attr('confluence-user-email') || ENV['CONFLUENCE_USER_EMAIL']
-    }
-  end
 
   def parse_fields(attrs)
     raw = attrs['fields']
@@ -262,12 +252,12 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     attrs['jql'] || attrs['1']
   end
 
-  def create_jira_client(credentials)
+  def create_jira_client(credentials_hash)
     ConfluenceJiraClient.new(
-      base_url: credentials[:confluence_base_url],
-      jira_base_url: credentials[:base_url],
-      api_token: credentials[:api_token],
-      user_email: credentials[:user_email]
+      base_url: credentials_hash[:confluence_base_url],
+      jira_base_url: credentials_hash[:base_url],
+      api_token: credentials_hash[:api_token],
+      user_email: credentials_hash[:user_email]
     )
   end
 
@@ -534,45 +524,7 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     @@field_info_printed = true
   end
 
-  # Resolve user provided field tokens to Jira field ids. Supports:
-  #  - direct field ids (e.g. customfield_12345)
-  #  - standard fields (key, summary, status, description)
-  #  - exact field display names (case insensitive) as provided by Jira metadata
-  # Returns [resolved_fields_array, unknown_fields_array]
-  def resolve_and_normalize_fields(user_fields, field_result)
-    return [user_fields, []] unless field_result && field_result[:success] && field_result[:fields]
-
-    # Build lookup: normalized display name => id
-    name_lookup = {}
-    field_result[:fields].each do |field|
-      next unless field['name'] && field['id']
-      normalized = normalize_field_name(field['name'].rstrip)
-      name_lookup[normalized] = field['id']
-    end
-
-    resolved = []
-    unknown  = []
-    user_fields.each do |token|
-      if token =~ /^customfield_\d+$/
-        resolved << token
-      elsif %w[key summary status description].include?(token)
-        resolved << token
-      else
-        normalized_token = normalize_field_name(token)
-        if name_lookup.key?(normalized_token)
-          resolved << name_lookup[normalized_token]
-        else
-          unknown << token
-        end
-      end
-    end
-
-    [resolved, unknown]
-  end
-
-  def normalize_field_name(name)
-    name.strip.downcase.gsub(/\s+/, ' ')
-  end
+  # field resolution moved to JiraFieldResolver
 
 end
 
