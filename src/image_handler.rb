@@ -1,9 +1,10 @@
 require 'fastimage'
 require_relative 'adf_builder'
+require_relative 'adf_logger'
 
 # Module for handling image conversion and dimension detection
 module ImageHandler
-  include Asciidoctor::Logging
+  # Replace direct Asciidoctor logging with unified AdfLogger
   
   # Helper method to detect and calculate image dimensions
   def detect_image_dimensions(node, width = nil, height = nil, is_inline = false)
@@ -16,12 +17,12 @@ module ImageHandler
     begin
       doc = node.document
       
-      logger.debug "Image URI='#{node.normalize_system_path target}'"
+      AdfLogger.debug "Image URI='#{node.normalize_system_path target}'"
       unless is_inline
         imagesdir = doc.attr('imagesdir')
         base_dir = doc.base_dir
         doc_file = doc.respond_to?(:docfile) ? doc.docfile : nil
-        logger.debug "Image target='#{target}', base_dir='#{base_dir}', docfile='#{doc_file}', imagesdir='#{imagesdir}'"
+        AdfLogger.debug "Image target='#{target}', base_dir='#{base_dir}', docfile='#{doc_file}', imagesdir='#{imagesdir}'"
       end
       
       # Branch based on whether it's a remote URL
@@ -33,7 +34,7 @@ module ImageHandler
       end
     rescue => e
       type = is_inline ? "inline image" : "image"
-      logger.warn "Error determining #{type} dimensions for '#{target}': #{e.message}" unless is_inline
+      AdfLogger.warn "Error determining #{type} dimensions for '#{target}': #{e.message}" unless is_inline
     end
 
     [width, height]
@@ -43,7 +44,7 @@ module ImageHandler
     images_dir_attr = document.attr('imagesdir')
 
     unless is_inline
-      logger.debug "Resolving local image: target='#{target}', base_dir='#{document.base_dir}', imagesdir='#{images_dir_attr || ''}'"
+      AdfLogger.debug "Resolving local image: target='#{target}', base_dir='#{document.base_dir}', imagesdir='#{images_dir_attr || ''}'"
     end
 
     # Build candidate paths via helper
@@ -52,7 +53,7 @@ module ImageHandler
 
     if found_path
       unless is_inline
-        logger.info "SUCCESS: Found local image at: #{found_path}"
+        AdfLogger.info "SUCCESS: Found local image at: #{found_path}"
       end
       dimensions = FastImage.size(found_path)
       if dimensions
@@ -61,8 +62,8 @@ module ImageHandler
       end
     else
       unless is_inline
-        logger.warn "FAILURE: Could not find local image '#{target}'. Tried the following locations:"
-        search_paths.uniq.each { |path| logger.warn "  - #{path}" }
+        AdfLogger.warn "FAILURE: Could not find local image '#{target}'. Tried the following locations:"
+        search_paths.uniq.each { |path| AdfLogger.warn "  - #{path}" }
       end
     end
     
@@ -92,7 +93,7 @@ module ImageHandler
     rescue => e
       error_msg = "Could not determine size for remote image: #{image_location}"
       error_msg += ". Reason: #{e.message}" unless is_inline
-      logger.warn error_msg unless is_inline
+      AdfLogger.warn error_msg unless is_inline
     end
     
     [width, height]
