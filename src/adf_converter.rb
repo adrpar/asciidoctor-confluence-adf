@@ -5,6 +5,7 @@ require 'cgi'
 require_relative 'image_handler'
 require_relative 'adf_builder'
 require_relative 'inline_anchor_helper'
+require_relative 'text_or_json_parser'
 
 class AdfConverter < Asciidoctor::Converter::Base
   include ImageHandler
@@ -26,6 +27,7 @@ class AdfConverter < Asciidoctor::Converter::Base
   def initialize(backend, opts = {})
     super
     @node_list = []
+    @text_or_json_parser = TextOrJsonParser.new { |txt| create_text_node(txt) }
     outfilesuffix '.adf'
   end
 
@@ -303,55 +305,11 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def parse_or_escape(text)
-    content_array = []
-    buffer = ''
-    json_buffer = ''
-    inside_json = false
-    json_depth = 0
-    text = CGI.unescapeHTML(text)
-    text.each_char do |char|
-      if inside_json
-        json_buffer << char
-        if char == '{' || char == '['
-          json_depth += 1
-        elsif char == '}' || char == ']'
-          json_depth -= 1
-          if json_depth.zero?
-            parse_json_buffer(json_buffer, buffer, content_array)
-            json_buffer.clear
-            inside_json = false
-          end
-        end
-      else
-        if char == '{' || char == '['
-          inside_json = true
-          json_depth += 1
-          json_buffer << char
-        else
-          buffer << char
-        end
-      end
-    end
-    content_array << create_text_node(buffer) unless buffer.empty?
-    content_array
+    @text_or_json_parser.parse(text)
   end
 
   private
 
-  def parse_json_buffer(json_buffer, buffer, content_array)
-    begin
-      parsed_json = JSON.parse(json_buffer)
-      if parsed_json.empty?
-        buffer << json_buffer
-      else
-        content_array << create_text_node(buffer) unless buffer.empty?
-        content_array << parsed_json unless parsed_json.empty?
-        buffer.clear
-      end
-    rescue JSON::ParserError
-      buffer << json_buffer
-    end
-  end
 
   def create_text_node(text, marks = nil)
     raise ArgumentError, "Text cannot be nil or empty" if text.nil? || text.empty?
