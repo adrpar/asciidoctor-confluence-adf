@@ -37,9 +37,14 @@ class JiraFieldResolver
     @name_lookup = nil
   end
 
-  # Returns [resolved_fields_array, unknown_fields_array]
+  JiraFieldResolutionResult = Struct.new(:resolved, :unknown, keyword_init: true) do
+    # Preserve legacy multi-assignment compatibility: resolved, unknown = resolver.resolve(list)
+    def to_ary; [resolved, unknown]; end
+  end
+
+  # Returns JiraFieldResolutionResult (supports array deconstruction)
   def resolve(user_fields)
-    return [user_fields, []] unless success?
+    return JiraFieldResolutionResult.new(resolved: user_fields, unknown: []) unless success?
 
     build_lookup_if_needed
     resolved = []
@@ -58,7 +63,7 @@ class JiraFieldResolver
         end
       end
     end
-    [resolved, unknown]
+    JiraFieldResolutionResult.new(resolved: resolved, unknown: unknown)
   end
 
   private

@@ -5,6 +5,7 @@ require 'cgi'
 require_relative 'image_handler'
 require_relative 'adf_builder'
 require_relative 'inline_anchor_helper'
+require_relative 'asciidoc_table_cell_parser'
 require_relative 'text_or_json_parser'
 
 class AdfConverter < Asciidoctor::Converter::Base
@@ -106,84 +107,44 @@ class AdfConverter < Asciidoctor::Converter::Base
     # Ensure downstream parsing (e.g., AsciiDoc cells) has access to the current document context
     previous_document = @current_document
     @current_document = node.document
-    table_content = [
-      *convert_table_head_rows(node.rows[:head]),
-      *convert_table_body_rows(node.rows[:body])
-    ]
-    
-    table_node = {
-      "type" => "table",
-      "content" => table_content
-    }
-    
-    self.node_list << table_node
+    table_content = convert_table_rows(node.rows)
+    self.node_list << { 'type' => 'table', 'content' => table_content }
   ensure
     # Restore previous document context
     @current_document = previous_document
   end
 
-  def convert_table_head_rows(head_rows)
-    return [] unless head_rows && !head_rows.empty?
-    head_rows.map do |row|
-    AdfBuilder.table_row(row.map { |cell| convert_table_header_cell(cell) })
+  def convert_table_rows(rows_hash)
+    return [] unless rows_hash
+    out = []
+    parser = AsciidocTableCellParser.new(converter: self, current_document: @current_document)
+
+    %i[head body].each do |section|
+      rows = rows_hash[section]
+      next unless rows && !rows.empty?
+      rows.each do |row|
+        force_header = (section == :head)
+        out << AdfBuilder.table_row(row.map { |cell| build_table_cell(cell, parser, force_header: force_header) })
+      end
     end
+    out
   end
 
-  def convert_table_body_rows(body_rows)
-    return [] unless body_rows && !body_rows.empty?
-    body_rows.map do |row|
-    AdfBuilder.table_row(row.map { |cell| convert_table_body_cell(cell) })
-    end
-  end
-
-  def convert_table_header_cell(cell)
-    cell_attrs = {
-      "colspan" => cell.colspan || 1,
-      "rowspan" => cell.rowspan || 1
-    }
-    AdfBuilder.table_cell('tableHeader', cell_attrs['colspan'], cell_attrs['rowspan'], [AdfBuilder.paragraph_node(parse_or_escape(cell.text))])
-  end
-
-  def convert_table_body_cell(cell)
-    cell_type = (cell.style == :header) ? "tableHeader" : "tableCell"
-    
-    if cell.style == :asciidoc
-      original_node_list = self.node_list.dup
-      self.node_list = []
-      
-      # Check if blocks are empty but text is present - common case with a| cells
-      if (cell.blocks.empty? || cell.blocks.nil?) && !cell.text.empty?
-        # Parse the text content into blocks using a temporary document, but
-        # propagate the parent document context (attributes, base_dir, safe mode)
-        load_opts = {
-          safe: (@current_document&.safe || :safe),
-          backend: 'adf',
-          attributes: (@current_document ? @current_document.attributes.dup : {}),
-          base_dir: (@current_document&.base_dir)
-        }.compact
-        cell_doc = Asciidoctor.load(cell.text, **load_opts)
-        
-        cell_doc.blocks.each do |block|
-          convert(block)
-        end
+  def build_table_cell(cell, parser, force_header: false)
+    type = force_header ? 'tableHeader' : cell_type(cell)
+    colspan, rowspan = table_cell_spans(cell)
+    content_nodes =
+      if cell.style == :asciidoc
+        parser.parse(cell)
       else
-        cell.blocks.each do |block|
-          convert(block)
-        end
+        [AdfBuilder.paragraph_node(parse_or_escape(cell.text))]
       end
-      
-      cell_content_nodes = self.node_list
-      
-      self.node_list = original_node_list
-      
-      if cell_content_nodes.empty? && !cell.text.empty?
-        cell_content_nodes = [create_paragraph_node(parse_or_escape(cell.text))]
-      end
-      
-      return AdfBuilder.table_cell(cell_type, cell.colspan || 1, cell.rowspan || 1, cell_content_nodes)
-    end
-    
-    AdfBuilder.table_cell(cell_type, cell.colspan || 1, cell.rowspan || 1, [AdfBuilder.paragraph_node(parse_or_escape(cell.text))])
+    AdfBuilder.table_cell(type, colspan, rowspan, content_nodes)
+  end
+
+  def cell_type(cell)
+    return 'tableHeader' if cell.style == :header
+    cell.style == :asciidoc && cell.role == 'header' ? 'tableHeader' : 'tableCell'
   end
 
   def convert_quote(node)

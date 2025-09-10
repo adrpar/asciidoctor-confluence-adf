@@ -93,7 +93,9 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     # Fetch field metadata before resolving user supplied field names
     field_result = client.get_jira_fields
 
-    resolved_fields, unknown_fields = JiraFieldResolver.new(field_result).resolve(user_fields)
+    resolution = JiraFieldResolver.new(field_result).resolve(user_fields)
+    resolved_fields = resolution.resolved
+    unknown_fields = resolution.unknown
     if !unknown_fields.empty?
       print_field_information_for_debugging([], field_result)
       AdfLogger.error "Unknown Jira field name(s): #{unknown_fields.map { |f| '"' + f + '"' }.join(', ')}. Use an exact field name as shown above or the custom field id (e.g. customfield_12345)."
