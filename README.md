@@ -33,6 +33,24 @@ This converter transforms AsciiDoc documents into Atlassian Document Format (ADF
 - Generates structured JSON for use in Confluence or other Atlassian tools.
 - Provides bidirectional conversion between AsciiDoc and Confluence content.
 
+### Logging & Build Failure Behavior
+
+All extension and converter diagnostics now route through the Asciidoctor logging framework (Asciidoctor::LoggerManager). This means the Asciidoctor CLI option `--failure-level` (or `-a failure-level=` attribute) will correctly cause the process to exit with a non‑zero status when messages at or above the configured severity are emitted.
+
+Examples:
+
+```bash
+# Fail the build on any warning or error produced by the extensions
+asciidoctor --failure-level=WARN -r ./src/adf_extensions.rb -b adf yourfile.adoc
+
+# Fail only on errors (default behavior if not specified)
+asciidoctor --failure-level=ERROR -r ./src/adf_extensions.rb -b adf yourfile.adoc
+```
+
+Internally, helpers in `adf_logger.rb` map to the Asciidoctor logger (`fatal`, `error`, `warn`, `info`, `debug`). If Asciidoctor isn’t loaded (e.g., during isolated script execution), they fallback to simple STDERR/STDOUT output so local scripts still show diagnostics.
+
+If you previously saw that warnings never caused a non‑zero exit code, make sure you’re using the updated extensions (require `adf_extensions.rb` or the specific macro file) and pass `--failure-level=warn` (case-insensitive) to enforce stricter CI behavior.
+
 > **Note:**  
 > This project has been created with the support of large language models (LLMs).  
 > As a result, some code may reflect an iterative or "vibe coding" style.  

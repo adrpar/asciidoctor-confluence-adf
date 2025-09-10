@@ -1,6 +1,8 @@
 require 'asciidoctor'
 require 'asciidoctor/extensions'
 
+require_relative 'adf_logger'
+
 class AppfoxWorkflowMetadataInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
   use_dsl
 
@@ -28,7 +30,7 @@ class AppfoxWorkflowMetadataInlineMacro < Asciidoctor::Extensions::InlineMacroPr
     if KEYWORDS.key?(target.downcase)
       text = KEYWORDS[target.downcase]
     else
-      warn ">>> WARN: Unknown appfoxWorkflowMetadata keyword '#{target}'."
+      AdfLogger.warn "Unknown appfoxWorkflowMetadata keyword '#{target}'."
       text = nil
     end
 
@@ -89,7 +91,7 @@ class AppfoxWorkflowApproversTableInlineMacro < Asciidoctor::Extensions::InlineM
   def process parent, target, attrs
     option = (target || '').downcase
     unless OPTIONS.key?(option)
-      warn ">>> WARN: Unknown workflowApproval option '#{target}'."
+      AdfLogger.warn "Unknown workflowApproval option '#{target}'."
       return "workflowApproval:#{target}[]"
     end
 
