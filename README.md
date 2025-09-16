@@ -244,11 +244,11 @@ workflowApproval:latest[]
 
 #### Change Table Macro
 
-Use `workflowChangeTable:[]` to insert the document control/change table.
+Use `workflowChangeTable:all[]` to insert the document control/change table (old `workflowChangeTable:[]` still works but defaults to `all`).
 
 **Example:**
 ```adoc
-workflowChangeTable:[]
+workflowChangeTable:all[]
 ```
 
 These macros are automatically converted to the correct ADF JSON for Appfox Workflows macros when using the `adf` backend.  
@@ -308,7 +308,7 @@ atlasMention:Adrian_Partl[]
 jira:ISSUE-123[]
 appfoxWorkflowMetadata:status[]
 workflowApproval:all[]
-workflowChangeTable:[]
+workflowChangeTable:all[]
 
 jiraIssuesTable::['project = "DEMO"', fields='key,summary,status']
 ADOC
