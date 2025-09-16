@@ -31,11 +31,11 @@ class AppfoxWorkflowMetadataInlineMacro < Asciidoctor::Extensions::InlineMacroPr
       text = KEYWORDS[target.downcase]
     else
       AdfLogger.warn "Unknown appfoxWorkflowMetadata keyword '#{target}'."
-      text = nil
+      return create_inline parent, :quoted, "appfoxWorkflowMetadata:#{target}[]", type: :unquoted
     end
 
-  # Use document backend (available during parse) instead of converter which may not be initialized yet
-  if parent.document.backend == 'adf' && text
+    # Use document backend (available during parse) instead of converter which may not be initialized yet
+    if parent.document.backend == 'adf'
       macro_params = {
         "data" => { "value" => text }
       }
@@ -45,7 +45,7 @@ class AppfoxWorkflowMetadataInlineMacro < Asciidoctor::Extensions::InlineMacroPr
         "type" => 'text'
       }
 
-      {
+  extension_hash = {
         "type" => "inlineExtension",
         "attrs" => {
           "extensionType" => "com.atlassian.confluence.macro.core",
@@ -65,10 +65,10 @@ class AppfoxWorkflowMetadataInlineMacro < Asciidoctor::Extensions::InlineMacroPr
             }
           }
         }
-      }.to_json
+      }
+      return create_inline parent, :quoted, extension_hash.to_json, type: :unquoted
     else
-      # Return an inline node instead of a raw String to avoid INFO warnings
-  return create_inline parent, :quoted, "appfoxWorkflowMetadata:#{target}[]", type: :unquoted
+      return create_inline parent, :quoted, "appfoxWorkflowMetadata:#{target}[]", type: :unquoted
     end
   end
 end
@@ -94,50 +94,39 @@ class AppfoxWorkflowApproversTableInlineMacro < Asciidoctor::Extensions::InlineM
     option = (target || '').downcase
     unless OPTIONS.key?(option)
       AdfLogger.warn "Unknown workflowApproval option '#{target}'."
-  return create_inline parent, :quoted, "workflowApproval:#{target}[]", type: :unquoted
+      return create_inline parent, :quoted, "workflowApproval:#{target}[]", type: :unquoted
     end
 
-    macro_params = { }
+    macro_params = {}
     indexed_macro_params = nil
-
     if OPTIONS[option]
-      macro_params["data"] = { "value" => OPTIONS[option] }
-      indexed_macro_params = {
-        "text" => OPTIONS[option],
-        "type" => "text"
-      }
+      value = OPTIONS[option]
+      macro_params['data'] = { 'value' => value } if value
+      indexed_macro_params = { 'text' => value, 'type' => 'text' } if value
     end
 
-  if parent.document.backend == 'adf'
-      extension_attrs = {
-        "layout" => DEFAULT_LAYOUT,
-        "extensionType" => "com.atlassian.confluence.macro.core",
-        "extensionKey" => "approvers-macro",
-        "parameters" => {
-          "macroParams" => macro_params,
-          "macroMetadata" => {
-            "schemaVersion" => { "value" => DEFAULT_SCHEMA_VERSION },
-            "placeholder" => [
-              {
-                "type" => "icon",
-                "data" => { "url" => DEFAULT_ICON_URL }
-              }
-            ],
-            "title" => DEFAULT_TITLE
+    if parent.document.backend == 'adf'
+      metadata = {
+        'schemaVersion' => { 'value' => DEFAULT_SCHEMA_VERSION },
+        'placeholder' => [ { 'type' => 'icon', 'data' => { 'url' => DEFAULT_ICON_URL } } ],
+        'title' => DEFAULT_TITLE
+      }
+      metadata['indexedMacroParams'] = indexed_macro_params if indexed_macro_params
+      extension_json = {
+        'type' => 'extension',
+        'attrs' => {
+          'layout' => DEFAULT_LAYOUT,
+          'extensionType' => 'com.atlassian.confluence.macro.core',
+          'extensionKey' => 'approvers-macro',
+          'parameters' => {
+            'macroParams' => macro_params,
+            'macroMetadata' => metadata
           }
         }
-      }
-      # Only add indexedMacroParams if present
-      if indexed_macro_params
-        extension_attrs["parameters"]["macroMetadata"]["indexedMacroParams"] = indexed_macro_params
-      end
-
-      {
-        "type" => "extension",
-        "attrs" => extension_attrs
       }.to_json
+      create_inline parent, :quoted, extension_json, type: :unquoted
     else
-  return create_inline parent, :quoted, "workflowApproval:#{target}[]", type: :unquoted
+      create_inline parent, :quoted, "workflowApproval:#{target}[]", type: :unquoted
     end
   end
 end
@@ -154,32 +143,26 @@ class AppfoxWorkflowChangeTableInlineMacro < Asciidoctor::Extensions::InlineMacr
   DEFAULT_LAYOUT = "default"
 
   def process parent, target, attrs
-  if parent.document.backend == 'adf'
-      extension_attrs = {
-        "layout" => DEFAULT_LAYOUT,
-        "extensionType" => "com.atlassian.confluence.macro.core",
-        "extensionKey" => "document-control-table-macro",
-        "parameters" => {
-          "macroParams" => { },
-          "macroMetadata" => {
-            "schemaVersion" => { "value" => DEFAULT_SCHEMA_VERSION },
-            "placeholder" => [
-              {
-                "type" => "icon",
-                "data" => { "url" => DEFAULT_ICON_URL }
-              }
-            ],
-            "title" => DEFAULT_TITLE
+    if parent.document.backend == 'adf'
+      extension_json = {
+        'type' => 'extension',
+        'attrs' => {
+          'layout' => DEFAULT_LAYOUT,
+          'extensionType' => 'com.atlassian.confluence.macro.core',
+          'extensionKey' => 'document-control-table-macro',
+          'parameters' => {
+            'macroParams' => {},
+            'macroMetadata' => {
+              'schemaVersion' => { 'value' => DEFAULT_SCHEMA_VERSION },
+              'placeholder' => [ { 'type' => 'icon', 'data' => { 'url' => DEFAULT_ICON_URL } } ],
+              'title' => DEFAULT_TITLE
+            }
           }
         }
-      }
-
-      {
-        "type" => "extension",
-        "attrs" => extension_attrs
       }.to_json
+      create_inline parent, :quoted, extension_json, type: :unquoted
     else
-      return create_inline parent, :quoted, "workflowChangeTable:#{target}[]", type: :unquoted
+      create_inline parent, :quoted, "workflowChangeTable:#{target}[]", type: :unquoted
     end
   end
 end
