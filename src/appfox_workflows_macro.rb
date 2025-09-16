@@ -45,7 +45,7 @@ class AppfoxWorkflowMetadataInlineMacro < Asciidoctor::Extensions::InlineMacroPr
         "type" => 'text'
       }
 
-  extension_hash = {
+      extension_hash = {
         "type" => "inlineExtension",
         "attrs" => {
           "extensionType" => "com.atlassian.confluence.macro.core",
