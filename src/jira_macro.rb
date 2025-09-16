@@ -18,15 +18,12 @@ class JiraInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
     base_url = parent.document.attr('jira-base-url') || ENV['JIRA_BASE_URL']
     if base_url.nil? || base_url.empty?
       AdfLogger.warn "No Jira base URL found, the Jira extension may not work as expected."
-      if attrs['text']
-        return %(jira:#{target}[#{attrs['text']}])
-      else
-        return %(jira:#{target}[])
-      end
+      txt = attrs['text'] ? "jira:#{target}[#{attrs['text']}]" : "jira:#{target}[]"
+      return create_inline parent, :quoted, txt, type: :unquoted
     else
       url = "#{base_url}/browse/#{target}"
       text = attrs['text'] || target
-      create_anchor parent, text, type: :link, target: url
+      return create_anchor parent, text, type: :link, target: url
     end
   end
 end
@@ -39,16 +36,15 @@ class AtlasMentionInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
 
   def process parent, target, attrs
     name = target.tr('_', ' ')
-    if parent.document.converter && parent.document.converter.backend == 'adf'
+    if parent.document.backend == 'adf'
       confluence_base_url = parent.document.attr('confluence-base-url') || ENV['CONFLUENCE_BASE_URL']
       jira_base_url = parent.document.attr('jira-base-url') || confluence_base_url || ENV['JIRA_BASE_URL']
       api_token = parent.document.attr('confluence-api-token') || ENV['CONFLUENCE_API_TOKEN']
       user_email = parent.document.attr('confluence-user-email') || ENV['CONFLUENCE_USER_EMAIL']
 
-
       if confluence_base_url.nil? || api_token.nil? || user_email.nil?
         AdfLogger.warn "Missing Confluence API credentials for atlasMention macro."
-        return { "type" => "text", "text" => "@#{name}" }.to_json
+        return create_inline parent, :quoted, "@#{name}", type: :unquoted
       end
 
       client = ConfluenceJiraClient.new(
@@ -60,18 +56,16 @@ class AtlasMentionInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
       user = client.find_user_by_fullname(name)
 
       if user
-        {
-          "type" => "mention",
-          "attrs" => {
-            "id" => user["id"],
-            "text" => "@#{user["displayName"]}"
-          }
+        mention_json = {
+          'type' => 'mention',
+          'attrs' => { 'id' => user['id'], 'text' => "@#{user['displayName']}" }
         }.to_json
+        return create_inline parent, :quoted, mention_json, type: :unquoted
       else
-        "@#{name}"
+        return create_inline parent, :quoted, "@#{name}", type: :unquoted
       end
     else
-      "@#{name}"
+      return create_inline parent, :quoted, "@#{name}", type: :unquoted
     end
   end
 end

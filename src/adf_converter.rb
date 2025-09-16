@@ -392,6 +392,22 @@ class AdfConverter < Asciidoctor::Converter::Base
 
     mark_attrs = node.type == :mark ? { "color" => DEFAULT_MARK_BACKGROUND_COLOR } : nil
     marks = [{ "type" => mark_type, "attrs" => mark_attrs }.compact]
+    # Support embedding raw JSON for inline macros that returned an :unquoted node
+    # We detect JSON objects/arrays and pass them through so paragraph parsing can pick them up.
+    if node.type == :unquoted
+      raw = node.text.to_s.strip
+      if raw.start_with?('{', '[')
+        begin
+          parsed = JSON.parse(raw)
+          # Only treat as ADF fragment if it looks like a node (has 'type') or array of nodes
+          if (parsed.is_a?(Hash) && parsed['type']) || (parsed.is_a?(Array) && parsed.first.is_a?(Hash) && parsed.first['type'])
+            return raw # Let convert_paragraph / parse_or_escape consume this JSON
+          end
+        rescue JSON::ParserError
+          # fall through to treat as plain text
+        end
+      end
+    end
 
     create_text_node(node.text, marks).to_json
   end
