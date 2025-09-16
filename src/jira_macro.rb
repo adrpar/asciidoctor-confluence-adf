@@ -14,8 +14,30 @@ class JiraInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
   named :jira
   name_positional_attributes 'text'
 
+  @@deprecated_jira_logged = false
+  @@deprecated_confluence_logged = false
+  @@deprecated_notice_inline = false
+
   def process parent, target, attrs
-    base_url = parent.document.attr('jira-base-url') || ENV['JIRA_BASE_URL']
+    base_url =
+      parent.document.attr('atlassian-base-url') ||
+      ENV['ATLASSIAN_BASE_URL'] ||
+      parent.document.attr('jira-base-url') ||
+      parent.document.attr('confluence-base-url') ||
+      ENV['JIRA_BASE_URL'] ||
+      ENV['CONFLUENCE_BASE_URL']
+
+    if base_url && parent.document.attr('atlassian-base-url').nil?
+      if parent.document.attr('jira-base-url') && !@@deprecated_jira_logged
+        AdfLogger.warn "'jira-base-url' is deprecated. Use 'atlassian-base-url' instead."; @@deprecated_jira_logged = true
+      end
+      if parent.document.attr('confluence-base-url') && !@@deprecated_confluence_logged
+        AdfLogger.warn "'confluence-base-url' is deprecated. Use 'atlassian-base-url' instead."; @@deprecated_confluence_logged = true
+      end
+      unless @@deprecated_notice_inline
+        AdfLogger.info "Using unified 'atlassian-base-url' fallback (old attributes detected)."; @@deprecated_notice_inline = true
+      end
+    end
     if base_url.nil? || base_url.empty?
       AdfLogger.warn "No Jira base URL found, the Jira extension may not work as expected."
       txt = attrs['text'] ? "jira:#{target}[#{attrs['text']}]" : "jira:#{target}[]"
@@ -37,8 +59,9 @@ class AtlasMentionInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
   def process parent, target, attrs
     name = target.tr('_', ' ')
     if parent.document.backend == 'adf'
-      confluence_base_url = parent.document.attr('confluence-base-url') || ENV['CONFLUENCE_BASE_URL']
-      jira_base_url = parent.document.attr('jira-base-url') || confluence_base_url || ENV['JIRA_BASE_URL']
+      unified = parent.document.attr('atlassian-base-url') || ENV['ATLASSIAN_BASE_URL']
+      confluence_base_url = unified || parent.document.attr('confluence-base-url') || parent.document.attr('jira-base-url') || ENV['CONFLUENCE_BASE_URL'] || ENV['JIRA_BASE_URL']
+      jira_base_url = unified || parent.document.attr('jira-base-url') || confluence_base_url || ENV['JIRA_BASE_URL'] || ENV['CONFLUENCE_BASE_URL']
       api_token = parent.document.attr('confluence-api-token') || ENV['CONFLUENCE_API_TOKEN']
       user_email = parent.document.attr('confluence-user-email') || ENV['CONFLUENCE_USER_EMAIL']
 
@@ -80,6 +103,10 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     super
     @adf_converter = AdfToAsciidocConverter.new
   end
+
+  # Deprecation notice flags (shared across instances)
+  @@deprecated_jira_logged ||= false
+  @@deprecated_confluence_logged ||= false
 
   def process(parent, target, attrs)
     return handle_invalid_attributes(parent, target, attrs) unless valid_attributes?(attrs)
@@ -231,9 +258,24 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
   end
 
   def get_credentials(parent)
+    unified = parent.document.attr('atlassian-base-url') || ENV['ATLASSIAN_BASE_URL']
+    jira_attr = parent.document.attr('jira-base-url') || ENV['JIRA_BASE_URL']
+    conf_attr = parent.document.attr('confluence-base-url') || ENV['CONFLUENCE_BASE_URL']
+
+    if unified.nil?
+      if parent.document.attr('jira-base-url') && !@@deprecated_jira_logged
+        AdfLogger.warn "'jira-base-url' is deprecated. Use 'atlassian-base-url' instead."; @@deprecated_jira_logged = true
+      end
+      if parent.document.attr('confluence-base-url') && !@@deprecated_confluence_logged
+        AdfLogger.warn "'confluence-base-url' is deprecated. Use 'atlassian-base-url' instead."; @@deprecated_confluence_logged = true
+      end
+    end
+
+    base = unified || jira_attr || conf_attr
+    conf = unified || conf_attr || jira_attr
     {
-      base_url: parent.document.attr('jira-base-url') || ENV['JIRA_BASE_URL'],
-      confluence_base_url: parent.document.attr('confluence-base-url') || parent.document.attr('jira-base-url') || ENV['CONFLUENCE_BASE_URL'] || ENV['JIRA_BASE_URL'],
+      base_url: base,
+      confluence_base_url: conf,
       api_token: parent.document.attr('confluence-api-token') || ENV['CONFLUENCE_API_TOKEN'],
       user_email: parent.document.attr('confluence-user-email') || ENV['CONFLUENCE_USER_EMAIL']
     }

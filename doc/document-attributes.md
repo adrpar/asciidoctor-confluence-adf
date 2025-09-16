@@ -8,10 +8,9 @@ Document attributes are the preferred way to configure the converter and macros,
 
 ### Important Document Attributes
 
-The following document attributes are supported:
+The following document attributes are supported (new unified form first):
 
-- `jira-base-url`: The base URL of your Jira instance
-- `confluence-base-url`: The base URL of your Confluence instance
+- `atlassian-base-url`: The base URL of your Atlassian Cloud site. Replaces the deprecated `jira-base-url` and `confluence-base-url` (both still work but emit a warning).
 - `confluence-api-token`: The API token for authentication
 - `confluence-user-email`: The email for authentication
 
@@ -23,8 +22,7 @@ You can set document attributes in your AsciiDoc file header:
 
 ```adoc
 = Document Title
-:jira-base-url: https://jira.example.com
-:confluence-base-url: https://confluence.example.com
+:atlassian-base-url: https://company.atlassian.net
 // WARNING: CONSIDER SECURITY IMPLICATIONS BEFORE ADDING CREDENTIALS DIRECTLY IN FILES
 :confluence-api-token: your-api-token
 :confluence-user-email: your.email@example.com
@@ -44,11 +42,12 @@ Your document content starts here...
 You can also set document attributes via the command line:
 
 ```bash
-asciidoctor -a jira-base-url=https://jira.example.com \
-            -a confluence-base-url=https://confluence.example.com \
+asciidoctor -a atlassian-base-url=https://company.atlassian.net \
             -a confluence-api-token=your-token \
             -a confluence-user-email=your.email@example.com \
             -r ./src/jira_macro.rb yourfile.adoc
+
+Deprecated (still accepted): `jira-base-url`, `confluence-base-url` (will be removed in a future release).
 ```
 
 This approach is particularly useful for setting sensitive information like API tokens that you don't want to commit to version control.
