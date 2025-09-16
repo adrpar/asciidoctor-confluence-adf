@@ -49,7 +49,7 @@ class AtlasMentionInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
 
       if confluence_base_url.nil? || api_token.nil? || user_email.nil?
         AdfLogger.warn "Missing Confluence API credentials for atlasMention macro."
-        return { "type" => "text", "text" => "@#{name}" }.to_json
+        return parent.document.converter.send(:register_inline_node, { "type" => "text", "text" => "@#{name}" })
       end
 
       client = ConfluenceJiraClient.new(
@@ -60,7 +60,11 @@ class AtlasMentionInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
       )
       user = client.find_user_by_fullname(name)
 
-      return user ? { "type" => "mention", "attrs" => { "id" => user["id"], "text" => "@#{user["displayName"]}" } }.to_json : "@#{name}"
+      if user
+        parent.document.converter.send(:register_inline_node, { "type" => "mention", "attrs" => { "id" => user["id"], "text" => "@#{user["displayName"]}" } })
+      else
+        "@#{name}"
+      end
     else
       "@#{name}"
     end
@@ -342,6 +346,14 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
                 format_custom_field(field_value)
               end
 
+      if field_id == 'description'
+        begin
+          AdfLogger.warn("[DEBUG] Raw description field rendered value before table assembly:\n#{value}")
+        rescue => e
+          AdfLogger.warn("[DEBUG] Failed to log description value: #{e.message}")
+        end
+      end
+
       if value.to_s.start_with?("a|\n")
         # Block cell: already includes a| and newline
         rendered_cells << value
@@ -365,8 +377,8 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
 
   def format_string_field(content)
     return "" if content.nil? || content.empty?
-    
-    content = process_wiki_links(content)
+  content = process_wiki_links(content)
+
     
     # Use 'a|' for any multi-line content or content with list-like structures
     if content.include?("\n") || content.match?(/^[ \t]*[*\-][ \t]+/)
@@ -413,7 +425,7 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
         processed << process_regular_line(line)
       end
     end
-    ensure_blank_line_before_lists(processed.join("\n"))
+  ensure_blank_line_before_lists(processed.join("\n"))
   end
 
   def ensure_blank_line_before_lists(text)
@@ -502,13 +514,6 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     AdfLogger.info "====================="
     AdfLogger.info "Custom Fields:"
     AdfLogger.info "-------------"
-    
-    field_map.each do |field_id, info|
-      next unless info[:custom]
-      used = used_fields[field_id] ? " (PRESENT IN RESULTS)" : ""
-      AdfLogger.info sprintf("%-25s = %-30s [%s]%s", field_id, "\"#{info[:name]}\"", info[:type], used)
-      AdfLogger.info sprintf("   Description: %s", info[:description]) if info[:description]
-    end
     
     AdfLogger.info ""
     AdfLogger.info "Standard Fields:"

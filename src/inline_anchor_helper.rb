@@ -4,7 +4,7 @@ require_relative 'adf_builder'
 
 module InlineAnchorHelper
   # Resolve link text and href for an inline anchor / xref node.
-  # Returns a JSON string representing the text node with link mark (to keep existing tests passing).
+  # Now returns a placeholder string referencing a registered inline node (no early JSON serialization).
   def build_link_from_inline_anchor(node)
     if node.type == :xref
       refid = node.attributes['refid']
@@ -20,11 +20,11 @@ module InlineAnchorHelper
         end
       end
       href = "##{refid}"
-      create_text_node(text, [AdfBuilder.link_mark(href)]).to_json
+  register_inline_node(create_text_node(text, [AdfBuilder.link_mark(href)]))
     else
       text = node.text || node.reftext || node.target
       href = node.target
-      create_text_node(text, [AdfBuilder.link_mark(href)]).to_json
+  register_inline_node(create_text_node(text, [AdfBuilder.link_mark(href)]))
     end
   end
 end

@@ -43,7 +43,7 @@ class AppfoxWorkflowMetadataInlineMacro < Asciidoctor::Extensions::InlineMacroPr
         "type" => 'text'
       }
 
-      {
+      node_hash = {
         "type" => "inlineExtension",
         "attrs" => {
           "extensionType" => "com.atlassian.confluence.macro.core",
@@ -60,7 +60,8 @@ class AppfoxWorkflowMetadataInlineMacro < Asciidoctor::Extensions::InlineMacroPr
             }
           }
         }
-      }.to_json
+      }
+      parent.document.converter.send(:register_inline_node, node_hash)
     else
       "appfoxWorkflowMetadata:#{target}[]"
     end
@@ -126,7 +127,8 @@ class AppfoxWorkflowApproversTableInlineMacro < Asciidoctor::Extensions::InlineM
         extension_attrs["parameters"]["macroMetadata"]["indexedMacroParams"] = indexed_macro_params
       end
 
-      { "type" => "extension", "attrs" => extension_attrs }.to_json
+      node_hash = { "type" => "extension", "attrs" => extension_attrs }
+      parent.document.converter.send(:register_inline_node, node_hash)
     else
       "workflowApproval:#{target}[]"
     end
@@ -165,7 +167,8 @@ class AppfoxWorkflowChangeTableInlineMacro < Asciidoctor::Extensions::InlineMacr
         }
       }
 
-      { "type" => "extension", "attrs" => extension_attrs }.to_json
+      node_hash = { "type" => "extension", "attrs" => extension_attrs }
+      parent.document.converter.send(:register_inline_node, node_hash)
     else
       "workflowChangeTable:#{target}[]"
     end

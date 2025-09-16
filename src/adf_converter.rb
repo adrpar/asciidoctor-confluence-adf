@@ -6,7 +6,7 @@ require_relative 'image_handler'
 require_relative 'adf_builder'
 require_relative 'inline_anchor_helper'
 require_relative 'asciidoc_table_cell_parser'
-require_relative 'text_or_json_parser'
+## Early JSON injection removed; inline nodes now registered via placeholders.
 
 class AdfConverter < Asciidoctor::Converter::Base
   include ImageHandler
@@ -36,10 +36,14 @@ class AdfConverter < Asciidoctor::Converter::Base
 
   attr_accessor :node_list
 
+  INLINE_PH_PREFIX = "\u0000ADF".freeze
+  INLINE_PH_SUFFIX = "\u0000".freeze
+
   def initialize(backend, opts = {})
     super
     @node_list = []
-    @text_or_json_parser = TextOrJsonParser.new { |txt| create_text_node(txt) }
+  @inline_nodes = {}
+  @inline_seq = 0
     outfilesuffix '.adf'
   end
 
@@ -78,7 +82,8 @@ class AdfConverter < Asciidoctor::Converter::Base
       convert_toc(node)
     end
     node.blocks.each { |block| convert(block) }
-    AdfBuilder.serialize_document(self.node_list.compact).to_json
+  expanded = expand_placeholders_in_nodes(self.node_list.compact)
+  AdfBuilder.serialize_document(expanded).to_json
   end
 
   def convert_paragraph(node)
@@ -238,7 +243,7 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def convert_inline_anchor(node)
-    build_link_from_inline_anchor(node)
+    build_link_from_inline_anchor(node) # returns placeholder string
   end
 
   def convert_inline_quoted(node)
@@ -248,7 +253,7 @@ class AdfConverter < Asciidoctor::Converter::Base
       mark_attrs = (mark_type == 'backgroundColor') ? { 'color' => DEFAULT_MARK_BACKGROUND_COLOR } : nil
       marks << { 'type' => mark_type, 'attrs' => mark_attrs }.compact
     end
-    create_text_node(node.text, marks).to_json
+    register_inline_node(create_text_node(node.text, marks))
   end
 
   def convert_listing(node)
@@ -268,7 +273,69 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def parse_or_escape(text)
-    @text_or_json_parser.parse(text)
+    return [] if text.nil? || text.empty?
+    out = []
+    pattern = /#{Regexp.escape(INLINE_PH_PREFIX)}([0-9a-f]+)#{Regexp.escape(INLINE_PH_SUFFIX)}/
+    last_index = 0
+    text.to_s.scan(pattern) do |m|
+      match_data = Regexp.last_match
+      pre = text[last_index...match_data.begin(0)]
+      out << create_text_node(pre) unless pre.nil? || pre.empty?
+      id_hex = m[0]
+      node = @inline_nodes[id_hex.to_i(16)]
+      if node.nil?
+        # Defer resolution; keep placeholder text for post-processing
+        out << create_text_node(INLINE_PH_PREFIX + id_hex + INLINE_PH_SUFFIX)
+      else
+        out << node
+      end
+      last_index = match_data.end(0)
+    end
+    tail = text[last_index..]
+    out << create_text_node(tail) unless tail.nil? || tail.empty?
+    out
+  end
+
+  # Recursively expand any text nodes containing unresolved placeholders into mixed content arrays.
+  def expand_placeholders_in_nodes(nodes)
+    nodes.map { |n| expand_placeholders_in_node(n) }.compact
+  end
+
+  def expand_placeholders_in_node(node)
+    return node unless node.is_a?(Hash)
+    if node['content'].is_a?(Array)
+      node['content'] = node['content'].flat_map { |child| expand_placeholders_in_node(child) }.compact
+    end
+    # Paragraph nodes have content array of inline nodes; scan text nodes
+    if node['type'] == 'paragraph'
+      new_content = []
+      node['content'].each do |inline_node|
+        if inline_node.is_a?(Hash) && inline_node['type'] == 'text' && inline_node['text'].include?(INLINE_PH_PREFIX)
+          new_content.concat(split_text_with_placeholders(inline_node['text'], inline_node['marks']))
+        else
+          new_content << inline_node
+        end
+      end
+      node['content'] = new_content
+    end
+    node
+  end
+
+  def split_text_with_placeholders(text, marks)
+    pattern = /#{Regexp.escape(INLINE_PH_PREFIX)}([0-9a-f]+)#{Regexp.escape(INLINE_PH_SUFFIX)}/
+    parts = []
+    last = 0
+    text.scan(pattern) do |m|
+      md = Regexp.last_match
+      pre = text[last...md.begin(0)]
+      parts << create_text_node(pre, marks) unless pre.nil? || pre.empty?
+      node = @inline_nodes[m[0].to_i(16)]
+      parts << node if node
+      last = md.end(0)
+    end
+    tail = text[last..]
+    parts << create_text_node(tail, marks) unless tail.nil? || tail.empty?
+    parts
   end
 
   private
@@ -281,6 +348,13 @@ class AdfConverter < Asciidoctor::Converter::Base
     node = { "text" => CGI.unescapeHTML(text), "type" => "text" }
     node["marks"] = marks if marks && !marks.empty?
     node.compact
+  end
+
+  def register_inline_node(node_hash)
+    id = @inline_seq
+    @inline_seq += 1
+    @inline_nodes[id] = node_hash
+    INLINE_PH_PREFIX + id.to_s(16) + INLINE_PH_SUFFIX
   end
 
   def create_paragraph_node(content)

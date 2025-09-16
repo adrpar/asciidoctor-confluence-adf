@@ -4,7 +4,6 @@ require_relative 'adf_logger'
 
 # Module for handling image conversion and dimension detection
 module ImageHandler
-  # Replace direct Asciidoctor logging with unified AdfLogger
   
   # Helper method to detect and calculate image dimensions
   def detect_image_dimensions(node, width = nil, height = nil, is_inline = false)
@@ -150,11 +149,8 @@ module ImageHandler
 
   # Convert an inline image node to ADF format
   def convert_inline_image(node)
-    # Get dimensions (either from attributes or detected from file)
     width, height = detect_image_dimensions(node, nil, nil, true)
-
-    # Build the node with the dimensions (possibly determined from the file)
-    AdfBuilder.media_inline(
+    media_inline = AdfBuilder.media_inline(
       {
         'type' => 'file',
         'id' => node.target || 'unknown-id',
@@ -165,6 +161,7 @@ module ImageHandler
         'height' => height,
         'data' => node.attr('data') || {}
       }.compact
-    ).to_json
+    )
+    register_inline_node(media_inline)
   end
 end
