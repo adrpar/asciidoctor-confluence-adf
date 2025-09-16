@@ -22,17 +22,17 @@ If you omit `--page-id`, a new page will be created.
 
 **Example: Create a new page**
 ```
-uv run upload_to_confluence.py --base-url https://your-domain.atlassian.net --asciidoc path/to/main.adoc --adf path/to/adf.json --space-id 123456 --title "Page Title" --username "user@example.com" --api-token "your-api-token"
+uv run upload_to_confluence.py --atlassian-base-url https://your-domain.atlassian.net --asciidoc path/to/main.adoc --adf path/to/adf.json --space-id 123456 --title "Page Title" --username "user@example.com" --api-token "your-api-token"
 ```
 
 **Example: Update an existing page**
 ```
-uv run upload_to_confluence.py --base-url https://your-domain.atlassian.net --asciidoc path/to/main.adoc --adf path/to/adf.json --space-id 123456 --title "Page Title" --username "user@example.com" --api-token "your-api-token" --page-id 987654
+uv run upload_to_confluence.py --atlassian-base-url https://your-domain.atlassian.net --asciidoc path/to/main.adoc --adf path/to/adf.json --space-id 123456 --title "Page Title" --username "user@example.com" --api-token "your-api-token" --page-id 987654
 ```
 
 **Example: Resize large images while uploading**
 ```
-uv run upload_to_confluence.py --base-url https://your-domain.atlassian.net --asciidoc path/to/main.adoc --adf path/to/adf.json --space-id 123456 --title "Page Title" --username "user@example.com" --api-token "your-api-token" --page-id 987654 --max-image-width 800
+uv run upload_to_confluence.py --atlassian-base-url https://your-domain.atlassian.net --asciidoc path/to/main.adoc --adf path/to/adf.json --space-id 123456 --title "Page Title" --username "user@example.com" --api-token "your-api-token" --page-id 987654 --max-image-width 800
 ```
 
 When updating, the script will:
@@ -48,17 +48,18 @@ You can use the `confluence_to_asciidoc.py` script to download content from Conf
 
 **Example: Download a single page**
 ```
-uv run confluence_to_asciidoc.py --base-url https://your-domain.atlassian.net --page-id 123456 --output-dir ./output --username "user@example.com" --api-token "your-api-token"
+uv run confluence_to_asciidoc.py --atlassian-base-url https://your-domain.atlassian.net --page-id 123456 --output-dir ./output --username "user@example.com" --api-token "your-api-token"
 ```
 
 **Example: Download a page and all its children**
 ```
-uv run confluence_to_asciidoc.py --base-url https://your-domain.atlassian.net --page-id 123456 --output-dir ./output --username "user@example.com" --api-token "your-api-token" --recursive
+uv run confluence_to_asciidoc.py --atlassian-base-url https://your-domain.atlassian.net --page-id 123456 --output-dir ./output --username "user@example.com" --api-token "your-api-token" --recursive
 ```
 
 **Upload script options:**
 ```
---base-url TEXT           Base URL of your Confluence instance (e.g. https://your-domain.atlassian.net) [required]
+--atlassian-base-url TEXT  Unified Atlassian base URL (e.g. https://your-domain.atlassian.net) [required]
+--base-url TEXT            (Deprecated) Legacy option retained for backward compatibility.
 --asciidoc TEXT           Path to the main Asciidoctor file [required]
 --adf TEXT                Path to the converted ADF JSON file [required]
 --space-id INTEGER        Confluence space ID [required]
@@ -77,8 +78,15 @@ uv run confluence_to_asciidoc.py --base-url https://your-domain.atlassian.net --
 --include-linked-pages      Also download pages linked from the content, not just child pages.
 --page-style [xref|include|both]
                             How to handle child pages: 'xref' (separate linked pages), 'include' (consolidated), or 'both'
---jira-base-url TEXT        Base URL of your Jira instance for issue links. Defaults to base-url.
+--jira-base-url TEXT        (Deprecated) Separate Jira base URL; prefer unified --atlassian-base-url.
 ```
+
+Environment variable precedence (if CLI options omitted):
+1. ATLASSIAN_BASE_URL (preferred)
+2. CONFLUENCE_BASE_URL (legacy)
+3. JIRA_BASE_URL (only for Jira ticket lookups if distinct)
+
+Deprecated document attributes / env vars still recognized elsewhere in the toolchain (`jira-base-url`, `confluence-base-url`, `JIRA_BASE_URL`, `CONFLUENCE_BASE_URL`) will emit a warning and should be migrated to `atlassian-base-url` / `ATLASSIAN_BASE_URL`.
 
 The script will:
 - Download the specified page content as AsciiDoc

@@ -5,9 +5,10 @@ require_relative 'adf_logger'
 
 # Simple Confluence and Jira API client
 class ConfluenceJiraClient
+  # jira_base_url kept for backward compatibility; if nil it defaults to base_url
   def initialize(base_url:, jira_base_url:, api_token:, user_email:)
     @base_url = base_url
-    @jira_base_url = jira_base_url
+    @jira_base_url = jira_base_url || base_url
     @api_token = api_token
     @user_email = user_email
   end

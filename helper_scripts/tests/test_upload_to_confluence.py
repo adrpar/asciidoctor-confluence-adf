@@ -170,7 +170,7 @@ image::another_image.jpg[Another Image]
         result = runner.invoke(
             main,
             [
-                "--base-url",
+                "--atlassian-base-url",
                 self.base_url,
                 "--asciidoc",
                 self.temp_asciidoc,

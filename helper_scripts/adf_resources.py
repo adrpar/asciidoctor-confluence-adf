@@ -406,8 +406,10 @@ def get_node_text_content(node, context):
                         link_href = href
 
                 # Check if this is a JIRA link
-                jira_base_url = os.environ.get(
-                    "JIRA_BASE_URL", "https://jira.example.com"
+                jira_base_url = (
+                    os.environ.get("JIRA_BASE_URL")
+                    or os.environ.get("ATLASSIAN_BASE_URL")
+                    or "https://jira.example.com"
                 )
                 if href and jira_base_url in href:
                     # Extract the issue key from URL

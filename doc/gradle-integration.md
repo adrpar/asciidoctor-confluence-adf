@@ -60,9 +60,11 @@ tasks.register('asciidoctorAdf', org.asciidoctor.gradle.jvm.AsciidoctorTask) {
     }
 
     attributes(
-        'confluence-base-url': System.getenv('CONFLUENCE_BASE_URL') ?: '<YOUR_CONFLUENCE_BASE_URL>',
+        // Preferred unified base URL (works for Jira links & Confluence API)
+        'atlassian-base-url': System.getenv('ATLASSIAN_BASE_URL') ?: System.getenv('CONFLUENCE_BASE_URL') ?: '<YOUR_ATLASSIAN_SITE_BASE_URL>',
         'confluence-api-token': System.getenv('CONFLUENCE_API_TOKEN') ?: '<YOUR_CONFLUENCE_API_TOKEN>',
         'confluence-user-email': System.getenv('CONFLUENCE_USER_EMAIL') ?: '<YOUR_CONFLUENCE_USER_EMAIL>'
+        // Deprecated (still accepted until removal): 'jira-base-url', 'confluence-base-url'
     )
 }
 ```

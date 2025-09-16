@@ -7,9 +7,14 @@ from adf_resources import update_adf_media_ids, update_adf_image_dimensions
 
 @click.command()
 @click.option(
+    "--atlassian-base-url",
+    required=False,
+    help="Unified Atlassian base URL (preferred, e.g. https://your-domain.atlassian.net)",
+)
+@click.option(
     "--base-url",
-    required=True,
-    help="Base URL of your Confluence instance (e.g. https://your-domain.atlassian.net)",
+    required=False,
+    help="(Deprecated) Base URL of your Confluence instance.",
 )
 @click.option("--asciidoc", required=True, help="Path to the main Asciidoctor file.")
 @click.option("--adf", required=True, help="Path to the converted ADF JSON file.")
@@ -29,9 +34,16 @@ from adf_resources import update_adf_media_ids, update_adf_image_dimensions
     type=int,
     help="Maximum width for images (pixels). If set, images wider than this will be resized and height adjusted to keep aspect ratio.",
 )
-def main(base_url, asciidoc, adf, space_id, title, username, api_token, page_id, max_image_width):
+def main(atlassian_base_url, base_url, asciidoc, adf, space_id, title, username, api_token, page_id, max_image_width):
+    # Determine effective base URL
+    effective_base = atlassian_base_url or base_url
+    if not effective_base:
+        raise click.UsageError("You must provide --atlassian-base-url (preferred) or --base-url.")
+    if base_url and not atlassian_base_url:
+        click.echo("WARNING: --base-url is deprecated. Use --atlassian-base-url instead.")
+
     # Initialize client
-    client = ConfluenceClient(base_url, username, api_token)
+    client = ConfluenceClient(effective_base, username, api_token)
 
     images = []
     extract_images_and_includes(asciidoc, images)
