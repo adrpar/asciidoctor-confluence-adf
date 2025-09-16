@@ -220,6 +220,18 @@ class ConfluenceClient:
             else {}
         )
 
+        # Determine page status to decide correct attachment endpoint (draft vs current)
+        page_status = "current"
+        page_info = self.get_page_info(page_id)
+        if page_info:
+            page_status = page_info.get("status", "current")
+        else:
+            page_status = "current"
+
+        attachment_endpoint = f"/wiki/rest/api/content/{page_id}/child/attachment"
+        if page_status == "draft":
+            attachment_endpoint += "?status=draft"
+
         for image in images:
             if not os.path.exists(image):
                 raise FileNotFoundError(f"Image not found: {image}")
@@ -253,10 +265,7 @@ class ConfluenceClient:
                 with open(image, "rb") as img_file:
                     img_data = img_file.read()
 
-                url = urljoin(
-                    self.base_url,
-                    f"/wiki/rest/api/content/{page_id}/child/attachment?status=draft",
-                )
+                url = urljoin(self.base_url, attachment_endpoint)
 
                 mime_type, _ = mimetypes.guess_type(filename)
                 if not mime_type:
