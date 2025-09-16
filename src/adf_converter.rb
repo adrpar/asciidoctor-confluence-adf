@@ -391,7 +391,13 @@ class AdfConverter < Asciidoctor::Converter::Base
                 end
 
     mark_attrs = node.type == :mark ? { "color" => DEFAULT_MARK_BACKGROUND_COLOR } : nil
-    marks = [{ "type" => mark_type, "attrs" => mark_attrs }.compact]
+    marks = if mark_type
+      mark = { "type" => mark_type }
+      mark["attrs"] = mark_attrs if mark_attrs
+      [mark]
+    else
+      nil
+    end
     # Support embedding raw JSON for inline macros that returned an :unquoted node
     # We detect JSON objects/arrays and pass them through so paragraph parsing can pick them up.
     if node.type == :unquoted

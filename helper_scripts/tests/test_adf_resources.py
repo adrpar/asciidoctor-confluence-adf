@@ -1185,7 +1185,7 @@ def test_process_workflow_change_table_extension():
 
     context = {}
     result = process_extension_node(change_table_node, context)
-    assert "workflowChangeTable:[]" in "".join(result)
+    assert "workflowChangeTable:all[]" in "".join(result)
 
     # Test error handling
     invalid_node = {

@@ -120,7 +120,7 @@ def test_upload_images_to_confluence_success(client, tmp_path):
     img.write_bytes(b"fakeimg")
     images = [str(img)]
 
-    with patch("requests.post") as mock_post:
+    with patch("requests.post") as mock_post, patch.object(ConfluenceClient, "get_page_info", return_value={"status": "current"}):
         mock_response = MagicMock()
         mock_response.status_code = 201
         mock_response.json.return_value = {
@@ -152,7 +152,7 @@ def test_upload_images_to_confluence_skips_unchanged(client, tmp_path):
         return_value="abc",
     ), patch(
         "confluence_client.ConfluenceClient.get_page_attachments"
-    ) as mock_get_attachments:
+    ) as mock_get_attachments, patch.object(ConfluenceClient, "get_page_info", return_value={"status": "current"}):
         # Simulate existing attachment
         mock_get_attachments.return_value = [
             {
@@ -184,7 +184,7 @@ def test_upload_images_to_confluence_replaces_and_deletes(client, tmp_path):
         "confluence_client.ConfluenceClient.get_page_attachments"
     ) as mock_get_attachments, patch(
         "confluence_client.ConfluenceClient.delete_attachment"
-    ) as mock_delete:
+    ) as mock_delete, patch.object(ConfluenceClient, "get_page_info", return_value={"status": "current"}):
         # Simulate existing attachment with different checksum
         mock_get_attachments.return_value = [
             {
@@ -206,6 +206,26 @@ def test_upload_images_to_confluence_replaces_and_deletes(client, tmp_path):
         assert result["test.png"] == "fileid-456"
         assert mock_post.call_count == 1  # Upload happened
         mock_delete.assert_called_once_with("attid-1")
+
+
+def test_upload_images_to_confluence_draft_page(client, tmp_path):
+    """Ensure draft pages use the ?status=draft attachment endpoint."""
+    img = tmp_path / "draft.png"
+    img.write_bytes(b"fakeimg")
+    images = [str(img)]
+
+    with patch("requests.post") as mock_post, patch.object(ConfluenceClient, "get_page_info", return_value={"status": "draft"}):
+        mock_response = MagicMock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = {
+            "results": [{"extensions": {"fileId": "fileid-draft"}}]
+        }
+        mock_post.return_value = mock_response
+
+        client.upload_images_to_confluence(images, "12345")
+        called_url = mock_post.call_args[0][0]
+        assert "?status=draft" in called_url
+    # Only verifying endpoint selection for draft; replacement logic covered in other test.
 
 
 def test_delete_attachment_success(client):

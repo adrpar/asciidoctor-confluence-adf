@@ -306,7 +306,8 @@ def process_extension_node(node, context):
             if "parameters" not in node.get("attrs", {}):
                 raise ValueError("Missing required parameters structure")
 
-            result.append("\nworkflowChangeTable:[]\n")
+            # Use explicit 'all' option for clarity/consistency with other workflow macros
+            result.append("\nworkflowChangeTable:all[]\n")
         except Exception as e:
             import logging
 
