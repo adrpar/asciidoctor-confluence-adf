@@ -34,7 +34,8 @@ class AppfoxWorkflowMetadataInlineMacro < Asciidoctor::Extensions::InlineMacroPr
       text = nil
     end
 
-    if parent.document.converter && parent.document.converter.backend == 'adf' && text
+  # Use document backend (available during parse) instead of converter which may not be initialized yet
+  if parent.document.backend == 'adf' && text
       macro_params = {
         "data" => { "value" => text }
       }
@@ -66,7 +67,8 @@ class AppfoxWorkflowMetadataInlineMacro < Asciidoctor::Extensions::InlineMacroPr
         }
       }.to_json
     else
-      "appfoxWorkflowMetadata:#{target}[]"
+      # Return an inline node instead of a raw String to avoid INFO warnings
+  return create_inline parent, :quoted, "appfoxWorkflowMetadata:#{target}[]", type: :unquoted
     end
   end
 end
@@ -92,7 +94,7 @@ class AppfoxWorkflowApproversTableInlineMacro < Asciidoctor::Extensions::InlineM
     option = (target || '').downcase
     unless OPTIONS.key?(option)
       AdfLogger.warn "Unknown workflowApproval option '#{target}'."
-      return "workflowApproval:#{target}[]"
+  return create_inline parent, :quoted, "workflowApproval:#{target}[]", type: :unquoted
     end
 
     macro_params = { }
@@ -106,7 +108,7 @@ class AppfoxWorkflowApproversTableInlineMacro < Asciidoctor::Extensions::InlineM
       }
     end
 
-    if parent.document.converter && parent.document.converter.backend == 'adf'
+  if parent.document.backend == 'adf'
       extension_attrs = {
         "layout" => DEFAULT_LAYOUT,
         "extensionType" => "com.atlassian.confluence.macro.core",
@@ -135,7 +137,7 @@ class AppfoxWorkflowApproversTableInlineMacro < Asciidoctor::Extensions::InlineM
         "attrs" => extension_attrs
       }.to_json
     else
-      "workflowApproval:#{target}[]"
+  return create_inline parent, :quoted, "workflowApproval:#{target}[]", type: :unquoted
     end
   end
 end
@@ -152,7 +154,7 @@ class AppfoxWorkflowChangeTableInlineMacro < Asciidoctor::Extensions::InlineMacr
   DEFAULT_LAYOUT = "default"
 
   def process parent, target, attrs
-    if parent.document.converter && parent.document.converter.backend == 'adf'
+  if parent.document.backend == 'adf'
       extension_attrs = {
         "layout" => DEFAULT_LAYOUT,
         "extensionType" => "com.atlassian.confluence.macro.core",
@@ -177,7 +179,7 @@ class AppfoxWorkflowChangeTableInlineMacro < Asciidoctor::Extensions::InlineMacr
         "attrs" => extension_attrs
       }.to_json
     else
-      "workflowChangeTable:#{target}[]"
+      return create_inline parent, :quoted, "workflowChangeTable:#{target}[]", type: :unquoted
     end
   end
 end
