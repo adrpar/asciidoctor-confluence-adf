@@ -7,9 +7,16 @@ class JiraSupportTest < Minitest::Test
     @original_env = {
       'JIRA_BASE_URL' => ENV['JIRA_BASE_URL'],
       'CONFLUENCE_BASE_URL' => ENV['CONFLUENCE_BASE_URL'],
+      'ATLASSIAN_BASE_URL' => ENV['ATLASSIAN_BASE_URL'],
       'CONFLUENCE_API_TOKEN' => ENV['CONFLUENCE_API_TOKEN'],
       'CONFLUENCE_USER_EMAIL' => ENV['CONFLUENCE_USER_EMAIL']
     }
+    # Ensure deterministic environment for fallback/validity tests
+    ENV.delete('ATLASSIAN_BASE_URL')
+    ENV.delete('CONFLUENCE_BASE_URL')
+    ENV.delete('JIRA_BASE_URL')
+    ENV.delete('CONFLUENCE_API_TOKEN')
+    ENV.delete('CONFLUENCE_USER_EMAIL')
   end
 
   def teardown
@@ -33,6 +40,7 @@ class JiraSupportTest < Minitest::Test
   end
 
   def test_credentials_fallback_chain_for_confluence_base_url
+    ENV.delete('ATLASSIAN_BASE_URL')
     # Case 1: explicit confluence-base-url attribute
     doc1 = Asciidoctor.load '', attributes: {
       'jira-base-url' => 'https://jira.example',

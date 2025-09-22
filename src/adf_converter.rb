@@ -138,12 +138,9 @@ class AdfConverter < Asciidoctor::Converter::Base
   def build_table_cell(cell, parser, force_header: false)
     type = force_header ? 'tableHeader' : cell_type(cell)
     colspan, rowspan = table_cell_spans(cell)
-    content_nodes =
-      if cell.style == :asciidoc
-        parser.parse(cell)
-      else
-        [AdfBuilder.paragraph_node(parse_or_escape(cell.text))]
-      end
+    # Always parse via AsciiDoc cell parser to ensure inline macros/JSON are converted
+    # into proper ADF nodes even for default-style cells.
+    content_nodes = parser.parse(cell)
     AdfBuilder.table_cell(type, colspan, rowspan, content_nodes)
   end
 
@@ -177,7 +174,10 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def convert_embedded(node)
-    ""
+    # Convert child blocks of embedded documents (e.g., AsciiDoc table cell content)
+    node.blocks.each { |block| convert(block) }
+    expanded = expand_placeholders_in_nodes(self.node_list.compact)
+    AdfBuilder.serialize_document(expanded).to_json
   end
 
   # Sidebar blocks are currently ignored (no-op)
@@ -253,7 +253,7 @@ class AdfConverter < Asciidoctor::Converter::Base
     if text.lstrip.start_with?('{')
       begin
         parsed = JSON.parse(text)
-        if parsed.is_a?(Hash) && (%w[inlineExtension extension].include?(parsed['type']))
+        if parsed.is_a?(Hash) && (%w[inlineExtension extension mention inlineCard].include?(parsed['type']))
           return register_inline_node(parsed)
         end
       rescue JSON::ParserError
@@ -289,12 +289,19 @@ class AdfConverter < Asciidoctor::Converter::Base
   def parse_or_escape(text)
     return [] if text.nil? || text.empty?
     out = []
-    pattern = /#{Regexp.escape(INLINE_PH_PREFIX)}([0-9a-f]+)#{Regexp.escape(INLINE_PH_SUFFIX)}/
+    # Allow optional suffix in case terminal NUL gets stripped in some contexts
+    pattern = /#{Regexp.escape(INLINE_PH_PREFIX)}([0-9a-f]+)(?:#{Regexp.escape(INLINE_PH_SUFFIX)})?/
     last_index = 0
     text.to_s.scan(pattern) do |m|
       match_data = Regexp.last_match
       pre = text[last_index...match_data.begin(0)]
-      out << create_text_node(pre) unless pre.nil? || pre.empty?
+      unless pre.nil? || pre.empty?
+        if (json_node = try_parse_inline_json(pre))
+          out << json_node
+        else
+          out << create_text_node(pre)
+        end
+      end
       id_hex = m[0]
       node = @inline_nodes[id_hex.to_i(16)]
       if node.nil?
@@ -306,7 +313,13 @@ class AdfConverter < Asciidoctor::Converter::Base
       last_index = match_data.end(0)
     end
     tail = text[last_index..]
-    out << create_text_node(tail) unless tail.nil? || tail.empty?
+    unless tail.nil? || tail.empty?
+      if (json_node = try_parse_inline_json(tail))
+        out << json_node
+      else
+        out << create_text_node(tail)
+      end
+    end
     out
   end
 
@@ -336,19 +349,32 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def split_text_with_placeholders(text, marks)
-    pattern = /#{Regexp.escape(INLINE_PH_PREFIX)}([0-9a-f]+)#{Regexp.escape(INLINE_PH_SUFFIX)}/
+    # Allow optional suffix in case terminal NUL gets stripped in some contexts
+    pattern = /#{Regexp.escape(INLINE_PH_PREFIX)}([0-9a-f]+)(?:#{Regexp.escape(INLINE_PH_SUFFIX)})?/
     parts = []
     last = 0
     text.scan(pattern) do |m|
       md = Regexp.last_match
       pre = text[last...md.begin(0)]
-      parts << create_text_node(pre, marks) unless pre.nil? || pre.empty?
+      unless pre.nil? || pre.empty?
+        if (json_node = try_parse_inline_json(pre))
+          parts << json_node
+        else
+          parts << create_text_node(pre, marks)
+        end
+      end
       node = @inline_nodes[m[0].to_i(16)]
       parts << node if node
       last = md.end(0)
     end
     tail = text[last..]
-    parts << create_text_node(tail, marks) unless tail.nil? || tail.empty?
+    unless tail.nil? || tail.empty?
+      if (json_node = try_parse_inline_json(tail))
+        parts << json_node
+      else
+        parts << create_text_node(tail, marks)
+      end
+    end
     parts
   end
 
@@ -362,6 +388,22 @@ class AdfConverter < Asciidoctor::Converter::Base
     node = { "text" => CGI.unescapeHTML(text), "type" => "text" }
     node["marks"] = marks if marks && !marks.empty?
     node.compact
+  end
+
+  # Attempt to parse a plain string segment that looks like a JSON-encoded ADF inline node
+  def try_parse_inline_json(str)
+    return nil unless str.is_a?(String)
+    s = str.strip
+    return nil unless s.start_with?('{') && s.end_with?('}')
+    begin
+      parsed = JSON.parse(s)
+    rescue JSON::ParserError
+      return nil
+    end
+    return nil unless parsed.is_a?(Hash)
+    t = parsed['type']
+    return parsed if %w[inlineExtension extension mention inlineCard].include?(t)
+    nil
   end
 
   def register_inline_node(node_hash)

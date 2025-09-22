@@ -376,7 +376,7 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
 
       if field_id == 'description'
         begin
-          AdfLogger.warn("[DEBUG] Raw description field rendered value before table assembly:\n#{value}")
+          AdfLogger.info("[DEBUG] Raw description field rendered value before table assembly:\n#{value}")
         rescue => e
           AdfLogger.warn("[DEBUG] Failed to log description value: #{e.message}")
         end
