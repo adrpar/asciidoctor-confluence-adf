@@ -247,6 +247,20 @@ class AdfConverter < Asciidoctor::Converter::Base
   end
 
   def convert_inline_quoted(node)
+    # Special case: some inline macros inject JSON for inline/regular extensions as text.
+    # Detect and convert that JSON into an inline node instead of plain text.
+    text = node.text.to_s
+    if text.lstrip.start_with?('{')
+      begin
+        parsed = JSON.parse(text)
+        if parsed.is_a?(Hash) && (%w[inlineExtension extension].include?(parsed['type']))
+          return register_inline_node(parsed)
+        end
+      rescue JSON::ParserError
+        # fall through to normal handling
+      end
+    end
+
     mark_type = MARK_TYPE_MAP[node.type]
     marks = []
     if mark_type

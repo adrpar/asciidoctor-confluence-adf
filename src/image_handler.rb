@@ -15,10 +15,10 @@ module ImageHandler
 
     begin
       doc = node.document
+      imagesdir = node.attr('imagesdir')
       
       AdfLogger.debug "Image URI='#{node.normalize_system_path target}'"
       unless is_inline
-        imagesdir = doc.attr('imagesdir')
         base_dir = doc.base_dir
         doc_file = doc.respond_to?(:docfile) ? doc.docfile : nil
         AdfLogger.debug "Image target='#{target}', base_dir='#{base_dir}', docfile='#{doc_file}', imagesdir='#{imagesdir}'"
@@ -29,7 +29,7 @@ module ImageHandler
         width, height = detect_remote_image_dimensions(target, width, height, is_inline)
       else
         # For local files, try various resolution strategies
-        width, height = detect_local_image_dimensions(target, doc, width, height, is_inline)
+        width, height = detect_local_image_dimensions(target, doc, imagesdir, width, height, is_inline)
       end
     rescue => e
       type = is_inline ? "inline image" : "image"
@@ -39,9 +39,7 @@ module ImageHandler
     [width, height]
   end
   
-  def detect_local_image_dimensions(target, document, width = nil, height = nil, is_inline = false)
-    images_dir_attr = document.attr('imagesdir')
-
+  def detect_local_image_dimensions(target, document, images_dir_attr, width = nil, height = nil, is_inline = false)
     unless is_inline
       AdfLogger.debug "Resolving local image: target='#{target}', base_dir='#{document.base_dir}', imagesdir='#{images_dir_attr || ''}'"
     end

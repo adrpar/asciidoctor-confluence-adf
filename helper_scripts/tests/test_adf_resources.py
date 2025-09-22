@@ -1,5 +1,4 @@
 import os
-import pytest
 import json
 
 from helper_scripts.adf_resources import (
@@ -13,7 +12,6 @@ from helper_scripts.adf_resources import (
     process_code_block_node,
     process_table_node,
     process_table_cell_node,
-    process_inline_extension_node,
     process_extension_node,
     process_inline_card_node,
     process_task_list_node,
@@ -423,11 +421,11 @@ def test_nested_lists():
 def test_jira_link_detection():
     """Test that links to JIRA issues are converted to JIRA macros."""
     # Save original env var if it exists
-    original_jira_url = os.environ.get("JIRA_BASE_URL")
+    original_jira_url = os.environ.get("JIRA_BASE_URL") or os.environ.get("ATLASSIAN_BASE_URL")
 
     try:
         # Set test JIRA URL
-        os.environ["JIRA_BASE_URL"] = "https://jira.example.com"
+        os.environ["ATLASSIAN_BASE_URL"] = "https://jira.example.com"
 
         # Test with a JIRA link
         node = {
@@ -455,9 +453,16 @@ def test_jira_link_detection():
     finally:
         # Restore original env var
         if original_jira_url:
-            os.environ["JIRA_BASE_URL"] = original_jira_url
-        elif "JIRA_BASE_URL" in os.environ:
-            del os.environ["JIRA_BASE_URL"]
+            if "JIRA_BASE_URL" in os.environ:
+                os.environ["JIRA_BASE_URL"] = original_jira_url
+            elif "ATLASSIAN_BASE_URL" in os.environ:
+                os.environ["ATLASSIAN_BASE_URL"] = original_jira_url
+            else:
+                os.environ["ATLASSIAN_BASE_URL"] = original_jira_url
+        else:
+            for var in ("JIRA_BASE_URL", "ATLASSIAN_BASE_URL"):
+                if var in os.environ:
+                    del os.environ[var]
 
 
 def test_bullet_list_in_table_cell():
@@ -556,7 +561,7 @@ def test_process_media_node_path_handling():
         # Images should not contain absolute paths
         assert not result[0].startswith("/")
         # Images should use the images_dir as prefix
-        assert f"image::test.png[]" in result[0]
+    assert "image::test.png[]" in result[0]
 
 
 def test_table_with_asciidoc_list_in_cell():
@@ -1185,7 +1190,7 @@ def test_process_workflow_change_table_extension():
 
     context = {}
     result = process_extension_node(change_table_node, context)
-    assert "workflowChangeTable:[]" in "".join(result)
+    assert "workflowChangeTable:all[]" in "".join(result)
 
     # Test error handling
     invalid_node = {

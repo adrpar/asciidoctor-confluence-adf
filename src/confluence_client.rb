@@ -4,9 +4,10 @@ require_relative 'adf_logger'
 
 # Simple Confluence and Jira API client
 class ConfluenceJiraClient
+  # jira_base_url kept for backward compatibility; if nil it defaults to base_url
   def initialize(base_url:, jira_base_url:, api_token:, user_email:)
     @base_url = base_url
-    @jira_base_url = jira_base_url
+    @jira_base_url = jira_base_url || base_url
     @api_token = api_token
     @user_email = user_email
   end
@@ -33,7 +34,7 @@ class ConfluenceJiraClient
           nil
         end
       else
-        AdfLogger.warn "Failed to query Confluence user: #{uri} -> #{res.code} #{res.message}"
+  AdfLogger.warn "Failed to query Confluence user: #{uri.to_s} -> #{res.code} #{res.message}"
         nil
       end
     rescue => e
@@ -42,9 +43,8 @@ class ConfluenceJiraClient
     end
   end
 
-  # Query Jira issues using JQL - Updated to use v3 JQL endpoint
+  # Query Jira issues using JQL
   def query_jira_issues(jql:, fields: nil)
-    # Updated to new REST API v3 JQL search endpoint
     uri = URI("#{@jira_base_url}/rest/api/3/search/jql")
     params = { 'jql' => jql }
     params['fields'] = fields.join(',') if fields # Only add fields parameter if specified
@@ -70,9 +70,8 @@ class ConfluenceJiraClient
     end
   end
 
-  # Get all available Jira fields metadata - Updated to use v3 API
+  # Get all available Jira fields metadata
   def get_jira_fields
-    # Updated to REST API v3 field endpoint
     uri = URI("#{@jira_base_url}/rest/api/3/field")
     req = Net::HTTP::Get.new(uri)
     req.basic_auth(@user_email, @api_token)

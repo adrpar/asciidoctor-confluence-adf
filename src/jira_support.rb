@@ -4,10 +4,33 @@ require_relative 'adf_logger'
 class JiraCredentials
   attr_reader :base_url, :confluence_base_url, :api_token, :user_email
 
+  # One‑time deprecation flags (class variables so they are shared)
+  @@deprecated_jira_base_logged = false
+  @@deprecated_confluence_base_logged = false
+
   def self.from_document(doc)
+    unified = doc.attr('atlassian-base-url') || ENV['ATLASSIAN_BASE_URL']
+    jira_attr = doc.attr('jira-base-url') || ENV['JIRA_BASE_URL']
+    conf_attr = doc.attr('confluence-base-url') || ENV['CONFLUENCE_BASE_URL']
+
+    # Determine effective base url precedence: unified > jira > confluence
+    base = unified || jira_attr || conf_attr
+    confluence_base = unified || conf_attr || jira_attr
+
+    if unified.nil?
+      if jira_attr && !@@deprecated_jira_base_logged
+        AdfLogger.warn "'jira-base-url' / JIRA_BASE_URL is deprecated. Use 'atlassian-base-url' / ATLASSIAN_BASE_URL instead."
+        @@deprecated_jira_base_logged = true
+      end
+      if conf_attr && !@@deprecated_confluence_base_logged
+        AdfLogger.warn "'confluence-base-url' / CONFLUENCE_BASE_URL is deprecated. Use 'atlassian-base-url' / ATLASSIAN_BASE_URL instead."
+        @@deprecated_confluence_base_logged = true
+      end
+    end
+
     new(
-      base_url: doc.attr('jira-base-url') || ENV['JIRA_BASE_URL'],
-      confluence_base_url: doc.attr('confluence-base-url') || doc.attr('jira-base-url') || ENV['CONFLUENCE_BASE_URL'] || ENV['JIRA_BASE_URL'],
+      base_url: base,
+      confluence_base_url: confluence_base,
       api_token: doc.attr('confluence-api-token') || ENV['CONFLUENCE_API_TOKEN'],
       user_email: doc.attr('confluence-user-email') || ENV['CONFLUENCE_USER_EMAIL']
     )

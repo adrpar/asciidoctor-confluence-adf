@@ -33,6 +33,24 @@ This converter transforms AsciiDoc documents into Atlassian Document Format (ADF
 - Generates structured JSON for use in Confluence or other Atlassian tools.
 - Provides bidirectional conversion between AsciiDoc and Confluence content.
 
+### Logging & Build Failure Behavior
+
+All extension and converter diagnostics now route through the Asciidoctor logging framework (Asciidoctor::LoggerManager). This means the Asciidoctor CLI option `--failure-level` (or `-a failure-level=` attribute) will correctly cause the process to exit with a non‑zero status when messages at or above the configured severity are emitted.
+
+Examples:
+
+```bash
+# Fail the build on any warning or error produced by the extensions
+asciidoctor --failure-level=WARN -r ./src/adf_extensions.rb -b adf yourfile.adoc
+
+# Fail only on errors (default behavior if not specified)
+asciidoctor --failure-level=ERROR -r ./src/adf_extensions.rb -b adf yourfile.adoc
+```
+
+Internally, helpers in `adf_logger.rb` map to the Asciidoctor logger (`fatal`, `error`, `warn`, `info`, `debug`). If Asciidoctor isn’t loaded (e.g., during isolated script execution), they fallback to simple STDERR/STDOUT output so local scripts still show diagnostics.
+
+If you previously saw that warnings never caused a non‑zero exit code, make sure you’re using the updated extensions (require `adf_extensions.rb` or the specific macro file) and pass `--failure-level=warn` (case-insensitive) to enforce stricter CI behavior.
+
 > **Note:**  
 > This project has been created with the support of large language models (LLMs).  
 > As a result, some code may reflect an iterative or "vibe coding" style.  
@@ -67,19 +85,21 @@ jira:ISSUE-456[Custom link text]
 - The macro will render as a link to the specified Jira issue.
 - You can optionally provide custom link text in the brackets.
 
-Set the `jira-base-url` document attribute to control the link target:
+Set the unified `atlassian-base-url` document attribute (preferred) to control the link target for Jira links (and Confluence operations where relevant). For backward compatibility `jira-base-url` still works but is deprecated.
 
 ```adoc
 = Document Title
-:jira-base-url: https://jira.example.com
+:atlassian-base-url: https://company.atlassian.net
 
 See jira:PROJECT-123[] for details.
 ```
 
-You can also set it via command line:
+You can also set it via command line (preferred new attribute):
 ```bash
-asciidoctor -a jira-base-url=https://jira.example.com -r ./src/jira_macro.rb yourfile.adoc
+asciidoctor -a atlassian-base-url=https://company.atlassian.net -r ./src/jira_macro.rb yourfile.adoc
 ```
+
+Deprecated (still accepted until removal): `-a jira-base-url=...`
 
 ---
 
@@ -154,14 +174,14 @@ ERROR: Unknown Jira field name(s): "NotARealField". Use an exact field name as s
 and emit a placeholder paragraph.
 
 **Document Attributes:**
-- `jira-base-url`: Base URL of your Jira instance
-- `confluence-api-token`: API token for Jira authentication
-- `confluence-user-email`: Email for Jira authentication
+- `atlassian-base-url`: Base URL of your Atlassian Cloud site (used for both Jira issue links & Confluence API calls). Replaces deprecated `jira-base-url` and `confluence-base-url`.
+- `confluence-api-token`: API token for Jira/Confluence authentication
+- `confluence-user-email`: Email for authentication
 
 Set these document attributes either in your AsciiDoc file header or via command line:
 
 ```bash
-asciidoctor -a jira-base-url=https://jira.example.com \
+asciidoctor -a atlassian-base-url=https://company.atlassian.net \
             -a confluence-api-token=your-token \
             -a confluence-user-email=your.email@example.com \
             -r ./src/jira_macro.rb yourfile.adoc
@@ -185,12 +205,12 @@ atlasMention:Adrian_Partl[]
 - For non-ADF backends (e.g., HTML), it will render as plain text `@Adrian Partl`.
 
 Set the following document attributes for user lookup:
-- `confluence-base-url`
+- `atlassian-base-url`
 - `confluence-api-token`
 - `confluence-user-email`
 
 ```bash
-asciidoctor -a confluence-base-url=https://yourcompany.atlassian.net \
+asciidoctor -a atlassian-base-url=https://yourcompany.atlassian.net \
             -a confluence-api-token=your-api-token \
             -a confluence-user-email=your.email@example.com \
             -r ./src/jira_macro.rb yourfile.adoc
@@ -226,11 +246,11 @@ workflowApproval:latest[]
 
 #### Change Table Macro
 
-Use `workflowChangeTable:[]` to insert the document control/change table.
+Use `workflowChangeTable:all[]` to insert the document control/change table (old `workflowChangeTable:[]` still works but defaults to `all`).
 
 **Example:**
 ```adoc
-workflowChangeTable:[]
+workflowChangeTable:all[]
 ```
 
 These macros are automatically converted to the correct ADF JSON for Appfox Workflows macros when using the `adf` backend.  
@@ -290,7 +310,7 @@ atlasMention:Adrian_Partl[]
 jira:ISSUE-123[]
 appfoxWorkflowMetadata:status[]
 workflowApproval:all[]
-workflowChangeTable:[]
+workflowChangeTable:all[]
 
 jiraIssuesTable::['project = "DEMO"', fields='key,summary,status']
 ADOC
@@ -325,7 +345,7 @@ asciidoctor -r ./src/adf_extensions.rb -b adf yourfile.adoc
 If you only want to use the macros (for example, with the standard HTML backend), you can load just the macro file(s):
 
 ```bash
-asciidoctor -r ./src/jira_macro.rb -a jira-base-url=https://jira.example.com yourfile.adoc
+asciidoctor -r ./src/jira_macro.rb -a atlassian-base-url=https://company.atlassian.net yourfile.adoc
 asciidoctor -r ./src/appfox_workflows_macro.rb yourfile.adoc
 
 # For documentation on setting document attributes, see doc/document-attributes.md

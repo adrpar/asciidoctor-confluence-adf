@@ -1,21 +1,25 @@
-# Unified logging helper for consistent output across environments
-# Uses Asciidoctor logger when available; falls back to simple STDERR/STDOUT output.
 module AdfLogger
   @external_logger = nil
 
   class << self
-    # Allow an external logger (e.g., Asciidoctor::LoggerManager.logger or any Logger-like object) to be injected.
     def use(logger)
       @external_logger = logger
     end
 
-    # Return current effective logger (external or nil)
     def effective_logger
       return @external_logger if @external_logger
       if defined?(Asciidoctor::LoggerManager)
         Asciidoctor::LoggerManager.logger
       else
         nil
+      end
+    end
+
+    def fatal(message)
+      if (log = effective_logger)
+        log.fatal message
+      else
+        Kernel.warn ">>> FATAL: #{message}"
       end
     end
 
@@ -51,7 +55,6 @@ module AdfLogger
       end
     end
 
-    # Provide a lightweight adapter responding to :debug/:info/:warn used by existing modules
     def adapter
       @adapter ||= Module.new do
         extend self

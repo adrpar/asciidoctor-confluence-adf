@@ -306,7 +306,8 @@ def process_extension_node(node, context):
             if "parameters" not in node.get("attrs", {}):
                 raise ValueError("Missing required parameters structure")
 
-            result.append("\nworkflowChangeTable:[]\n")
+            # Use explicit 'all' option for clarity/consistency with other workflow macros
+            result.append("\nworkflowChangeTable:all[]\n")
         except Exception as e:
             import logging
 
@@ -406,8 +407,10 @@ def get_node_text_content(node, context):
                         link_href = href
 
                 # Check if this is a JIRA link
-                jira_base_url = os.environ.get(
-                    "JIRA_BASE_URL", "https://jira.example.com"
+                jira_base_url = (
+                    os.environ.get("JIRA_BASE_URL")
+                    or os.environ.get("ATLASSIAN_BASE_URL")
+                    or "https://jira.example.com"
                 )
                 if href and jira_base_url in href:
                     # Extract the issue key from URL

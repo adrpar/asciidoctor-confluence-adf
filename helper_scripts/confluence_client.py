@@ -12,10 +12,10 @@ class ConfluenceClient:
 
     def __init__(
         self,
-        base_url=os.environ.get("CONFLUENCE_BASE_URL"),
+        base_url=os.environ.get("ATLASSIAN_BASE_URL") or os.environ.get("CONFLUENCE_BASE_URL"),
         username=os.environ.get("CONFLUENCE_USER_EMAIL"),
         api_token=os.environ.get("CONFLUENCE_API_TOKEN"),
-        jira_base_url=None,
+        jira_base_url=os.environ.get("JIRA_BASE_URL"),
     ):
         """Initialize the Confluence client.
 
@@ -25,9 +25,15 @@ class ConfluenceClient:
             api_token (str): Confluence API token
             jira_base_url (str, optional): Base URL of your Jira instance. Defaults to base_url.
         """
+        if not base_url:
+            raise ValueError(
+                "Confluence base URL not provided. Set ATLASSIAN_BASE_URL or CONFLUENCE_BASE_URL environment variable, or pass base_url explicitly."
+            )
+
         self.base_url = base_url
         self.username = username
         self.api_token = api_token
+        # Precedence: explicit jira_base_url > unified base_url
         self.jira_base_url = jira_base_url or base_url
 
     def _auth_headers(self, content_type=None, atlassian_token=None):
@@ -220,6 +226,18 @@ class ConfluenceClient:
             else {}
         )
 
+        # Determine page status to decide correct attachment endpoint (draft vs current)
+        page_status = "current"
+        page_info = self.get_page_info(page_id)
+        if page_info:
+            page_status = page_info.get("status", "current")
+        else:
+            page_status = "current"
+
+        attachment_endpoint = f"/wiki/rest/api/content/{page_id}/child/attachment"
+        if page_status == "draft":
+            attachment_endpoint += "?status=draft"
+
         for image in images:
             if not os.path.exists(image):
                 raise FileNotFoundError(f"Image not found: {image}")
@@ -253,10 +271,7 @@ class ConfluenceClient:
                 with open(image, "rb") as img_file:
                     img_data = img_file.read()
 
-                url = urljoin(
-                    self.base_url,
-                    f"/wiki/rest/api/content/{page_id}/child/attachment?status=draft",
-                )
+                url = urljoin(self.base_url, attachment_endpoint)
 
                 mime_type, _ = mimetypes.guess_type(filename)
                 if not mime_type:
