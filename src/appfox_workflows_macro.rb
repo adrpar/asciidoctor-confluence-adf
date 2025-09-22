@@ -1,6 +1,5 @@
 require 'asciidoctor'
 require 'asciidoctor/extensions'
-
 require_relative 'adf_logger'
 
 class AppfoxWorkflowMetadataInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
@@ -23,7 +22,7 @@ class AppfoxWorkflowMetadataInlineMacro < Asciidoctor::Extensions::InlineMacroPr
     "transition" => "Transition Date",
     "pageid" => "Unique Page ID",
     "status" => "Workflow Status"
-  }
+  }.freeze
 
   def process parent, target, attrs
     raise ArgumentError, "Target cannot be nil" if target.nil?
@@ -31,7 +30,7 @@ class AppfoxWorkflowMetadataInlineMacro < Asciidoctor::Extensions::InlineMacroPr
       text = KEYWORDS[target.downcase]
     else
       AdfLogger.warn "Unknown appfoxWorkflowMetadata keyword '#{target}'."
-      return create_inline parent, :quoted, "appfoxWorkflowMetadata:#{target}[]", type: :unquoted
+  return create_inline parent, :quoted, "appfoxWorkflowMetadata:#{target}[]", type: :unquoted
     end
 
     # Use document backend (available during parse) instead of converter which may not be initialized yet
@@ -45,7 +44,7 @@ class AppfoxWorkflowMetadataInlineMacro < Asciidoctor::Extensions::InlineMacroPr
         "type" => 'text'
       }
 
-      extension_hash = {
+  extension_hash = {
         "type" => "inlineExtension",
         "attrs" => {
           "extensionType" => "com.atlassian.confluence.macro.core",
@@ -56,17 +55,14 @@ class AppfoxWorkflowMetadataInlineMacro < Asciidoctor::Extensions::InlineMacroPr
               "schemaVersion" => { "value" => DEFAULT_SCHEMA_VERSION },
               "indexedMacroParams" => indexed_macro_params,
               "placeholder" => [
-                {
-                  "type" => "icon",
-                  "data" => { "url" => DEFAULT_ICON_URL }
-                }
+                { "type" => "icon", "data" => { "url" => DEFAULT_ICON_URL } }
               ],
               "title" => DEFAULT_TITLE
             }
           }
         }
       }
-      return create_inline parent, :quoted, extension_hash.to_json, type: :unquoted
+  return create_inline parent, :quoted, extension_hash.to_json, type: :unquoted
     else
       return create_inline parent, :quoted, "appfoxWorkflowMetadata:#{target}[]", type: :unquoted
     end
@@ -88,7 +84,7 @@ class AppfoxWorkflowApproversTableInlineMacro < Asciidoctor::Extensions::InlineM
   OPTIONS = {
     "all" => nil, # All approvers for current workflow (no data param)
     "latest" => "Latest Approvals for Current Workflow"
-  }
+  }.freeze
 
   def process parent, target, attrs
     option = (target || '').downcase

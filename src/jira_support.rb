@@ -19,11 +19,11 @@ class JiraCredentials
 
     if unified.nil?
       if jira_attr && !@@deprecated_jira_base_logged
-        AdfLogger.warn "'jira-base-url' / JIRA_BASE_URL is deprecated. Use 'atlassian-base-url' / ATLASSIAN_BASE_URL instead." 
+        AdfLogger.warn "'jira-base-url' / JIRA_BASE_URL is deprecated. Use 'atlassian-base-url' / ATLASSIAN_BASE_URL instead."
         @@deprecated_jira_base_logged = true
       end
       if conf_attr && !@@deprecated_confluence_base_logged
-        AdfLogger.warn "'confluence-base-url' / CONFLUENCE_BASE_URL is deprecated. Use 'atlassian-base-url' / ATLASSIAN_BASE_URL instead." 
+        AdfLogger.warn "'confluence-base-url' / CONFLUENCE_BASE_URL is deprecated. Use 'atlassian-base-url' / ATLASSIAN_BASE_URL instead."
         @@deprecated_confluence_base_logged = true
       end
     end

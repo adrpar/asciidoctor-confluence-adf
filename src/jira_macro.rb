@@ -7,6 +7,7 @@ require 'csv'
 require_relative 'confluence_client'
 require_relative 'adf_to_asciidoc'
 require_relative 'adf_logger'
+require_relative 'jira_support'
 
 class JiraInlineMacro < Asciidoctor::Extensions::InlineMacroProcessor
   use_dsl
@@ -111,19 +112,21 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
   def process(parent, target, attrs)
     return handle_invalid_attributes(parent, target, attrs) unless valid_attributes?(attrs)
 
-    credentials = get_credentials(parent)
-    return handle_missing_credentials(parent, target, attrs) unless credentials_valid?(credentials)
+    credentials = JiraCredentials.from_document(parent.document)
+    return handle_missing_credentials(parent, target, attrs) unless credentials.valid?
 
     user_fields = parse_fields(attrs)
     jql = parse_jql(target, attrs)
     return handle_missing_jql(parent, target, attrs) if jql.nil? || jql.empty?
 
-    client = create_jira_client(credentials)
+    client = create_jira_client(credentials.to_h)
 
     # Fetch field metadata before resolving user supplied field names
     field_result = client.get_jira_fields
 
-    resolved_fields, unknown_fields = resolve_and_normalize_fields(user_fields, field_result)
+    resolution = JiraFieldResolver.new(field_result).resolve(user_fields)
+    resolved_fields = resolution.resolved
+    unknown_fields = resolution.unknown
     if !unknown_fields.empty?
       print_field_information_for_debugging([], field_result)
       AdfLogger.error "Unknown Jira field name(s): #{unknown_fields.map { |f| '"' + f + '"' }.join(', ')}. Use an exact field name as shown above or the custom field id (e.g. customfield_12345)."
@@ -136,7 +139,7 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     )
 
     if api_query_successful?(result)
-      table_content = build_table(result[:data]['issues'], resolved_fields, field_result, credentials[:base_url])
+      table_content = build_table(result[:data]['issues'], resolved_fields, field_result, credentials.base_url)
 
       # Add bold title if specified
       if attrs['title']
@@ -231,9 +234,6 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     end
   end
 
-  def credentials_valid?(credentials)
-    !credentials[:base_url].nil? && !credentials[:api_token].nil? && !credentials[:user_email].nil?
-  end
 
   def handle_invalid_attributes(parent, target, attrs)
     # Attempt to recover JQL from positional attribute if provided
@@ -257,29 +257,7 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     create_paragraph(parent, "jiraIssuesTable::['#{target}', fields='#{attrs['fields']}']", {})
   end
 
-  def get_credentials(parent)
-    unified = parent.document.attr('atlassian-base-url') || ENV['ATLASSIAN_BASE_URL']
-    jira_attr = parent.document.attr('jira-base-url') || ENV['JIRA_BASE_URL']
-    conf_attr = parent.document.attr('confluence-base-url') || ENV['CONFLUENCE_BASE_URL']
-
-    if unified.nil?
-      if parent.document.attr('jira-base-url') && !@@deprecated_jira_logged
-        AdfLogger.warn "'jira-base-url' is deprecated. Use 'atlassian-base-url' instead."; @@deprecated_jira_logged = true
-      end
-      if parent.document.attr('confluence-base-url') && !@@deprecated_confluence_logged
-        AdfLogger.warn "'confluence-base-url' is deprecated. Use 'atlassian-base-url' instead."; @@deprecated_confluence_logged = true
-      end
-    end
-
-    base = unified || jira_attr || conf_attr
-    conf = unified || conf_attr || jira_attr
-    {
-      base_url: base,
-      confluence_base_url: conf,
-      api_token: parent.document.attr('confluence-api-token') || ENV['CONFLUENCE_API_TOKEN'],
-      user_email: parent.document.attr('confluence-user-email') || ENV['CONFLUENCE_USER_EMAIL']
-    }
-  end
+  # helper get_credentials was removed in favor of JiraCredentials.from_document
 
   def parse_fields(attrs)
     raw = attrs['fields']
@@ -308,12 +286,12 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     attrs['jql'] || attrs['1']
   end
 
-  def create_jira_client(credentials)
+  def create_jira_client(credentials_hash)
     ConfluenceJiraClient.new(
-      base_url: credentials[:confluence_base_url],
-      jira_base_url: credentials[:base_url],
-      api_token: credentials[:api_token],
-      user_email: credentials[:user_email]
+      base_url: credentials_hash[:confluence_base_url],
+      jira_base_url: credentials_hash[:base_url],
+      api_token: credentials_hash[:api_token],
+      user_email: credentials_hash[:user_email]
     )
   end
 
@@ -396,6 +374,14 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
                 format_custom_field(field_value)
               end
 
+      if field_id == 'description'
+        begin
+          AdfLogger.info("[DEBUG] Raw description field rendered value before table assembly:\n#{value}")
+        rescue => e
+          AdfLogger.warn("[DEBUG] Failed to log description value: #{e.message}")
+        end
+      end
+
       if value.to_s.start_with?("a|\n")
         # Block cell: already includes a| and newline
         rendered_cells << value
@@ -419,8 +405,8 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
 
   def format_string_field(content)
     return "" if content.nil? || content.empty?
-    
-    content = process_wiki_links(content)
+  content = process_wiki_links(content)
+
     
     # Use 'a|' for any multi-line content or content with list-like structures
     if content.include?("\n") || content.match?(/^[ \t]*[*\-][ \t]+/)
@@ -467,7 +453,7 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
         processed << process_regular_line(line)
       end
     end
-    ensure_blank_line_before_lists(processed.join("\n"))
+  ensure_blank_line_before_lists(processed.join("\n"))
   end
 
   def ensure_blank_line_before_lists(text)
@@ -557,13 +543,6 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     AdfLogger.info "Custom Fields:"
     AdfLogger.info "-------------"
     
-    field_map.each do |field_id, info|
-      next unless info[:custom]
-      used = used_fields[field_id] ? " (PRESENT IN RESULTS)" : ""
-      AdfLogger.info sprintf("%-25s = %-30s [%s]%s", field_id, "\"#{info[:name]}\"", info[:type], used)
-      AdfLogger.info sprintf("   Description: %s", info[:description]) if info[:description]
-    end
-    
     AdfLogger.info ""
     AdfLogger.info "Standard Fields:"
     AdfLogger.info "---------------"
@@ -580,45 +559,7 @@ class JiraIssuesTableBlockMacro < Asciidoctor::Extensions::BlockMacroProcessor
     @@field_info_printed = true
   end
 
-  # Resolve user provided field tokens to Jira field ids. Supports:
-  #  - direct field ids (e.g. customfield_12345)
-  #  - standard fields (key, summary, status, description)
-  #  - exact field display names (case insensitive) as provided by Jira metadata
-  # Returns [resolved_fields_array, unknown_fields_array]
-  def resolve_and_normalize_fields(user_fields, field_result)
-    return [user_fields, []] unless field_result && field_result[:success] && field_result[:fields]
-
-    # Build lookup: normalized display name => id
-    name_lookup = {}
-    field_result[:fields].each do |field|
-      next unless field['name'] && field['id']
-      normalized = normalize_field_name(field['name'].rstrip)
-      name_lookup[normalized] = field['id']
-    end
-
-    resolved = []
-    unknown  = []
-    user_fields.each do |token|
-      if token =~ /^customfield_\d+$/
-        resolved << token
-      elsif %w[key summary status description].include?(token)
-        resolved << token
-      else
-        normalized_token = normalize_field_name(token)
-        if name_lookup.key?(normalized_token)
-          resolved << name_lookup[normalized_token]
-        else
-          unknown << token
-        end
-      end
-    end
-
-    [resolved, unknown]
-  end
-
-  def normalize_field_name(name)
-    name.strip.downcase.gsub(/\s+/, ' ')
-  end
+  # field resolution moved to JiraFieldResolver
 
 end
 
