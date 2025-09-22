@@ -12,10 +12,10 @@ class ConfluenceClient:
 
     def __init__(
         self,
-        base_url=os.environ.get("CONFLUENCE_BASE_URL"),
+        base_url=os.environ.get("ATLASSIAN_BASE_URL") or os.environ.get("CONFLUENCE_BASE_URL"),
         username=os.environ.get("CONFLUENCE_USER_EMAIL"),
         api_token=os.environ.get("CONFLUENCE_API_TOKEN"),
-        jira_base_url=None,
+        jira_base_url=os.environ.get("JIRA_BASE_URL"),
     ):
         """Initialize the Confluence client.
 
@@ -25,9 +25,15 @@ class ConfluenceClient:
             api_token (str): Confluence API token
             jira_base_url (str, optional): Base URL of your Jira instance. Defaults to base_url.
         """
+        if not base_url:
+            raise ValueError(
+                "Confluence base URL not provided. Set ATLASSIAN_BASE_URL or CONFLUENCE_BASE_URL environment variable, or pass base_url explicitly."
+            )
+
         self.base_url = base_url
         self.username = username
         self.api_token = api_token
+        # Precedence: explicit jira_base_url > unified base_url
         self.jira_base_url = jira_base_url or base_url
 
     def _auth_headers(self, content_type=None, atlassian_token=None):

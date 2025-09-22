@@ -520,9 +520,14 @@ class ConfluenceDownloader:
 
 @click.command()
 @click.option(
+    "--atlassian-base-url",
+    required=False,
+    help="Unified Atlassian base URL (preferred, e.g. https://your-domain.atlassian.net)",
+)
+@click.option(
     "--base-url",
-    required=True,
-    help="Base URL of your Confluence instance (e.g. https://your-domain.atlassian.net)",
+    required=False,
+    help="(Deprecated) Base URL of your Confluence instance.",
 )
 @click.option(
     "--page-id", required=True, type=str, help="ID of the Confluence page to download."
@@ -537,7 +542,7 @@ class ConfluenceDownloader:
 @click.option(
     "--jira-base-url",
     required=False,
-    help="Base URL of your Jira instance for issue links. Defaults to base-url.",
+    help="(Deprecated) Separate Jira base URL; unified URL supersedes this.",
 )
 @click.option(
     "--images-dir",
@@ -563,6 +568,7 @@ class ConfluenceDownloader:
     help="How to handle child pages: 'xref' (separate linked pages), 'include' (consolidated), or 'both'",
 )
 def main(
+    atlassian_base_url,
     base_url,
     page_id,
     output_dir,
@@ -577,8 +583,16 @@ def main(
 ):
     """Download a Confluence page and convert it to AsciiDoc."""
     try:
-        # Initialize client
-        client = ConfluenceClient(base_url, username, api_token, jira_base_url)
+        effective_base = atlassian_base_url or base_url
+        if not effective_base:
+            raise click.UsageError("You must provide --atlassian-base-url (preferred) or --base-url.")
+        if base_url and not atlassian_base_url:
+            logger.warning("--base-url is deprecated. Use --atlassian-base-url instead.")
+        if jira_base_url and not atlassian_base_url:
+            logger.warning("--jira-base-url is deprecated and ignored when --atlassian-base-url is used.")
+
+        # Initialize client (jira_base_url only if explicitly different and unified not given)
+        client = ConfluenceClient(effective_base, username, api_token, jira_base_url if (jira_base_url and not atlassian_base_url) else None)
         downloader = ConfluenceDownloader(client)
 
         # Ensure output directory exists
@@ -611,7 +625,7 @@ def main(
 
         # Create consolidated document if requested
         if page_style in ["include", "both"]:
-            logger.info(f"Creating consolidated document...")
+            logger.info("Creating consolidated document...")
             consolidated_path = downloader.create_consolidated_document(
                 page_id, output_dir, page_mapping
             )
